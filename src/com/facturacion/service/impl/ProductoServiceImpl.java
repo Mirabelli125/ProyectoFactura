@@ -172,6 +172,25 @@ public class ProductoServiceImpl implements ProductoService {
             .orElse(-1.0);
     }
     
+    @Override
+    public Producto buscarProductoPorId(int id) {
+        if (id <= 0) {
+            throw new IllegalArgumentException("El ID del producto debe ser mayor que cero");
+        }
+        
+        try {
+            // Buscar el producto por su ID en el repositorio
+            Optional<Producto> producto = productoRepository.buscarPorId(id);
+            
+            // Si no se encuentra el producto, lanzar una excepción
+            return producto.orElseThrow(() -> new IllegalArgumentException("No se encontró un producto con el ID: " + id));
+        } catch (Exception e) {
+            // Log the error (in a real application, you'd use a proper logging framework)
+            System.err.println("Error al buscar producto por ID: " + e.getMessage());
+            throw new RuntimeException("Error al buscar el producto: " + e.getMessage(), e);
+        }
+    }
+    
     /**
      * Valida que los datos obligatorios del producto sean correctos.
      * 

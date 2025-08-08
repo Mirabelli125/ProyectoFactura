@@ -111,8 +111,14 @@ public class ProductoRepositoryImpl implements ProductoRepository {
     @Override
     public List<Producto> buscarPorTipo(boolean esPerecedero) {
         return buscarTodos().stream()
-            .filter(producto -> (producto instanceof ProductoPerecedero) == esPerecedero)
+            .filter(p -> p instanceof ProductoPerecedero == esPerecedero)
             .collect(Collectors.toList());
+    }
+    
+    @Override
+    public Optional<Producto> buscarPorId(int id) {
+        // In this implementation, we'll use the code as the ID since they're equivalent in this context
+        return buscarPorCodigo(id);
     }
     
     @Override

@@ -5,36 +5,21 @@ import com.facturacion.model.Impuesto;
 import com.facturacion.model.Producto;
 import com.facturacion.model.ProductoNoPerecedero;
 import com.facturacion.model.ProductoPerecedero;
-import java.awt.BorderLayout;
-import java.awt.Dimension;
-import java.awt.GridBagConstraints;
-import java.awt.GridBagLayout;
-import java.awt.Insets;
-import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
-import java.time.format.DateTimeParseException;
-import java.util.List;
+import com.facturacion.service.ProductoService;
+import com.facturacion.service.impl.ProductoServiceImpl;
+
 import javax.swing.*;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 import javax.swing.table.*;
-import javax.swing.RowFilter;
-import java.util.Map.Entry;
-import javax.persistence.PersistenceException;
-import javax.swing.JDialog;
-import javax.swing.JOptionPane;
-import javax.swing.JPanel;
-import javax.swing.JScrollPane;
-import javax.swing.JSpinner;
-import javax.swing.JTable;
-import javax.swing.JTextField;
-import javax.swing.RowFilter;
-import javax.swing.SpinnerNumberModel;
-import javax.swing.event.DocumentEvent;
-import javax.swing.event.DocumentListener;
-import javax.swing.table.DefaultTableModel;
-import javax.swing.table.TableModel;
-import javax.swing.table.TableRowSorter;
+import javax.swing.text.Document;
+import java.awt.*;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+import java.util.List;
 
 /**
  * Panel para el mantenimiento de productos.
@@ -42,33 +27,71 @@ import javax.swing.table.TableRowSorter;
  */
 public class ProductoPanel extends BasePanel {
     
-    // Componentes de la interfaz
+    protected final App app;
     private JTable tablaProductos;
-    private DefaultTableModel modeloTabla;
+    private TableRowSorter<TableModel> sorter;
     private JTextField txtBuscar;
+    private JComboBox<String> cmbTipoProducto;
     private JButton btnNuevo;
     private JButton btnEditar;
     private JButton btnEliminar;
-    private JComboBox<String> cmbTipoProducto;
-    private JComboBox<Impuesto> cmbImpuesto;
+    private JButton btnRefrescar;
+    private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+    private JButton btnAgregar;
+    private JButton btnActualizar;
+    private JComboBox<String> cmbTipoBusqueda;
     
-    // Filtro para la tabla
-    private TableRowSorter<TableModel> sorter;
-    
-    // Formateador de fechas
-    private final DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+    // Servicio
+    private final ProductoService productoService;
     
     /**
      * Crea una nueva instancia del panel de productos.
      * 
-     * @param app Referencia a la aplicación principal
+     * @param app La aplicación principal
      */
     public ProductoPanel(App app) {
         super(app);
+        this.app = app;
+        this.productoService = new ProductoServiceImpl(null); // Repository will be injected properly later
+        initComponents();
+        
+        // Inicializar los listeners de eventos
+        if (btnAgregar != null) {
+            btnAgregar.addActionListener(e -> mostrarDialogoNuevoProducto());
+        }
+        
+        if (btnEditar != null) {
+            btnEditar.addActionListener(e -> editarProducto());
+        }
+        
+        if (btnEliminar != null) {
+            btnEliminar.addActionListener(e -> eliminarProducto());
+        }
+        
+        if (btnActualizar != null) {
+            btnActualizar.addActionListener(e -> cargarProductos());
+        }
+        
+        // Configurar el filtro de búsqueda
+        if (txtBuscar != null) {
+            txtBuscar.getDocument().addDocumentListener(new DocumentListener() {
+                @Override
+                public void insertUpdate(DocumentEvent e) { filtrarProductos(); }
+                @Override
+                public void removeUpdate(DocumentEvent e) { filtrarProductos(); }
+                @Override
+                public void changedUpdate(DocumentEvent e) { filtrarProductos(); }
+            });
+        }
+        
+        // Cargar los datos iniciales
+        cargarProductos();
     }
     
-    @Override
-    protected void initComponents() {
+    /**
+     * Inicializa los componentes de la interfaz de usuario.
+     */
+    private void initComponents() {
         // Configurar el diseño del panel
         setLayout(new BorderLayout(5, 5));
         
@@ -104,7 +127,7 @@ public class ProductoPanel extends BasePanel {
         panelTabla.setBorder(javax.swing.BorderFactory.createTitledBorder("Productos"));
         
         // Crear la tabla de productos
-        modeloTabla = new DefaultTableModel(
+        DefaultTableModel modeloTabla = new DefaultTableModel(
             new Object[]{"Código", "Nombre", "Precio", "Impuesto", "Cantidad", "Tipo", "Vencimiento"}, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
@@ -124,25 +147,33 @@ public class ProductoPanel extends BasePanel {
         // Panel de botones
         JPanel panelBotones = new JPanel(new GridBagLayout());
         
-        btnNuevo = new JButton("Nuevo");
+        // Inicializar botones con nombres consistentes
+        btnAgregar = new JButton("Nuevo");
         btnEditar = new JButton("Editar");
         btnEliminar = new JButton("Eliminar");
         
-        btnNuevo.addActionListener(e -> mostrarDialogoProducto(null));
-        btnEditar.addActionListener(e -> editarProductoSeleccionado());
-        btnEliminar.addActionListener(e -> eliminarProductoSeleccionado());
+        // Configurar acciones de los botones
+        btnAgregar.addActionListener(e -> mostrarDialogoNuevoProducto());
+        btnEditar.addActionListener(e -> editarProducto());
+        btnEliminar.addActionListener(e -> eliminarProducto());
         
+        // Deshabilitar botones de edición y eliminación inicialmente
+        btnEditar.setEnabled(false);
+        btnEliminar.setEnabled(false);
+        
+        // Configurar el panel de botones
         gbc.gridx = 0;
         gbc.gridy = 0;
         gbc.weightx = 1.0;
         gbc.fill = GridBagConstraints.HORIZONTAL;
-        panelBotones.add(btnNuevo, gbc);
+        panelBotones.add(btnAgregar, gbc);
         
         gbc.gridx = 1;
-        gbc.weightx = 0.0;
+        gbc.weightx = 0.5;
         panelBotones.add(btnEditar, gbc);
         
         gbc.gridx = 2;
+        gbc.weightx = 0.5;
         panelBotones.add(btnEliminar, gbc);
         
         // Agregar componentes al panel principal
@@ -165,71 +196,47 @@ public class ProductoPanel extends BasePanel {
         // Agregar el panel de contenido al panel principal con borde
         add(contentPanel, BorderLayout.CENTER);
         
+        // Configurar la selección de filas en la tabla
+        tablaProductos.getSelectionModel().addListSelectionListener(e -> {
+            boolean filaSeleccionada = tablaProductos.getSelectedRow() != -1;
+            btnEditar.setEnabled(filaSeleccionada);
+            btnEliminar.setEnabled(filaSeleccionada);
+        });
+        
         // Configurar el filtro de búsqueda
         configurarFiltroBusqueda();
         
-        // Cargar los datos iniciales
-        cargarProductos();
+        // Cargar los datos iniciales en un hilo separado para no bloquear la UI
+        SwingUtilities.invokeLater(this::cargarProductos);
     }
     
-    /**
-     * Configura el filtro de búsqueda para la tabla de productos.
-     */
     private void configurarFiltroBusqueda() {
         // Filtrar por texto de búsqueda
         txtBuscar.getDocument().addDocumentListener(new DocumentListener() {
             @Override
             public void insertUpdate(DocumentEvent e) {
-                filtrarTabla();
+                filtrarProductos();
             }
             
             @Override
             public void removeUpdate(DocumentEvent e) {
-                filtrarTabla();
+                filtrarProductos();
             }
             
             @Override
             public void changedUpdate(DocumentEvent e) {
-                filtrarTabla();
+                filtrarProductos();
             }
         });
         
         // Filtrar por tipo de producto
-        cmbTipoProducto.addActionListener(e -> filtrarTabla());
+        cmbTipoProducto.addActionListener(e -> filtrarProductos());
     }
     
-    /**
-     * Aplica los filtros de búsqueda a la tabla.
-     */
-    private void filtrarTabla() {
-        String texto = txtBuscar.getText().toLowerCase();
-        String tipoSeleccionado = (String) cmbTipoProducto.getSelectedItem();
-        
-        sorter.setRowFilter(new RowFilter<TableModel, Integer>() {
-            @Override
-            public boolean include(Entry<? extends TableModel, ? extends Integer> entry) {
-                // Filtrar por texto de búsqueda (código, nombre)
-                String codigo = entry.getStringValue(0).toLowerCase();
-                String nombre = entry.getStringValue(1).toLowerCase();
-                String tipo = entry.getStringValue(5);
-                
-                boolean coincideTexto = codigo.contains(texto) || nombre.contains(texto);
-                
-                // Filtrar por tipo de producto
-                boolean coincideTipo = tipoSeleccionado.equals("Todos") ||
-                    (tipoSeleccionado.equals("Perecedero") && tipo.equals("Perecedero")) ||
-                    (tipoSeleccionado.equals("No perecedero") && tipo.equals("No perecedero"));
-                
-                return coincideTexto && coincideTipo;
-            }
-        });
-    }
-    
-    /**
-     * Carga los productos desde el servicio y los muestra en la tabla.
-     */
+    // Carga los productos desde el servicio y los muestra en la tabla.
     private void cargarProductos() {
         // Limpiar la tabla
+        DefaultTableModel modeloTabla = (DefaultTableModel) tablaProductos.getModel();
         modeloTabla.setRowCount(0);
         
         try {
@@ -248,510 +255,554 @@ public class ProductoPanel extends BasePanel {
                 if (producto instanceof ProductoPerecedero) {
                     ProductoPerecedero pp = (ProductoPerecedero) producto;
                     fila[5] = "Perecedero";
-                    fila[6] = pp.getFechaVencimiento().format(dateFormatter);
+                    fila[6] = pp.getFechaVencimiento().format(DATE_FORMATTER);
                 } else {
-                    fila[5] = "No perecedero";
-                    fila[6] = "N/A";
+                    fila[5] = "No Perecedero";
+                    fila[6] = "";
                 }
                 
                 modeloTabla.addRow(fila);
             }
             
             // Ordenar por código de producto por defecto
-            tablaProductos.getRowSorter().toggleSortOrder(0);
-            
+            if (tablaProductos.getRowSorter() != null) {
+                tablaProductos.getRowSorter().toggleSortOrder(0);
+            }
         } catch (Exception e) {
-            mostrarError("Error al cargar los productos: " + e.getMessage());
+            JOptionPane.showMessageDialog(this, 
+                "Error al cargar los productos: " + e.getMessage(),
+                "Error",
+                JOptionPane.ERROR_MESSAGE);
         }
     }
     
-    /**
-     * Muestra el diálogo para agregar o editar un producto.
-     * 
-     * @param producto Producto a editar, o null para crear uno nuevo
-     */
-    private void mostrarDialogoProducto(Producto producto) {
-        // Crear el diálogo
-        JDialogProducto dialogo = new JDialogProducto(this, producto);
-        dialogo.setLocationRelativeTo(this);
-        dialogo.setVisible(true);
+    private void filtrarProductos() {
+        if (sorter == null || txtBuscar == null || cmbTipoProducto == null) {
+            return;
+        }
         
-        // Si se guardaron los cambios, actualizar la tabla
-        if (dialogo.isGuardado()) {
-            cargarProductos();
+        String textoBusqueda = txtBuscar.getText().trim().toLowerCase();
+        String tipoSeleccionado = cmbTipoProducto.getSelectedItem().toString().toLowerCase();
+        
+        RowFilter<TableModel, Object> filtro = new RowFilter<TableModel, Object>() {
+            @Override
+            public boolean include(Entry<? extends TableModel, ? extends Object> entry) {
+                TableModel model = entry.getModel();
+                int row = Integer.parseInt(entry.getIdentifier().toString());
+                
+                // Filtrar por texto de búsqueda (nombre y código)
+                String nombre = model.getValueAt(row, 1).toString().toLowerCase();
+                String codigo = model.getValueAt(row, 0).toString().toLowerCase();
+                boolean coincideTexto = nombre.contains(textoBusqueda) || 
+                                      codigo.contains(textoBusqueda);
+                
+                // Filtrar por tipo de producto
+                String tipo = model.getValueAt(row, 5).toString().toLowerCase();
+                boolean coincideTipo = tipoSeleccionado.equals("todos") || 
+                                     tipo.contains(tipoSeleccionado);
+                
+                return coincideTexto && coincideTipo;
+            }
+        };
+        
+        sorter.setRowFilter(filtro);
+    }
+    
+    /**
+     * Muestra el diálogo para agregar un nuevo producto.
+     */
+    private void mostrarDialogoNuevoProducto() {
+        try {
+            JDialogProducto dialog = new JDialogProducto(SwingUtilities.getWindowAncestor(this), null);
+            dialog.setVisible(true);
+            if (dialog.isGuardado()) {
+                cargarProductos();
+            }
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this,
+                "Error al mostrar el diálogo de producto: " + e.getMessage(),
+                "Error",
+                JOptionPane.ERROR_MESSAGE);
         }
     }
     
     /**
-     * Obtiene el producto seleccionado en la tabla.
-     * 
-     * @return El producto seleccionado, o null si no hay selección
+     * Muestra el diálogo para editar el producto seleccionado.
      */
-    private Producto obtenerProductoSeleccionado() {
+    private void editarProducto() {
         int filaSeleccionada = tablaProductos.getSelectedRow();
         if (filaSeleccionada == -1) {
-            return null;
-        }
-        
-        // Obtener el código del producto seleccionado
-        int codigo = (int) modeloTabla.getValueAt(
-            tablaProductos.convertRowIndexToModel(filaSeleccionada), 0);
-        
-        // Buscar el producto en el servicio
-        return app.getProductoService().buscarPorCodigo(codigo).orElse(null);
-    }
-    
-    /**
-     * Edita el producto seleccionado en la tabla.
-     */
-    private void editarProductoSeleccionado() {
-        Producto producto = obtenerProductoSeleccionado();
-        if (producto == null) {
-            mostrarError("Por favor, seleccione un producto para editar.");
+            JOptionPane.showMessageDialog(this,
+                "Por favor, seleccione un producto para editar.",
+                "Selección requerida",
+                JOptionPane.WARNING_MESSAGE);
             return;
         }
         
-        mostrarDialogoProducto(producto);
+        try {
+            int idProducto = (int) tablaProductos.getValueAt(filaSeleccionada, 0);
+            Producto producto = app.getProductoService().buscarProductoPorId(idProducto);
+            
+            if (producto == null) {
+                JOptionPane.showMessageDialog(this,
+                    "No se pudo encontrar el producto seleccionado.",
+                    "Error",
+                    JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+            
+            JDialogProducto dialog = new JDialogProducto(SwingUtilities.getWindowAncestor(this), producto);
+            dialog.setVisible(true);
+            
+            if (dialog.isGuardado()) {
+                cargarProductos();
+            }
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this,
+                "Error al editar el producto: " + e.getMessage(),
+                "Error",
+                JOptionPane.ERROR_MESSAGE);
+        }
     }
     
     /**
-     * Elimina el producto seleccionado de la tabla.
+     * Elimina el producto seleccionado de la base de datos.
      */
-    private void eliminarProductoSeleccionado() {
-        Producto producto = obtenerProductoSeleccionado();
-        if (producto == null) {
-            mostrarError("Por favor, seleccione un producto para eliminar.");
+    private void eliminarProducto() {
+        int filaSeleccionada = tablaProductos.getSelectedRow();
+        if (filaSeleccionada == -1) {
+            JOptionPane.showMessageDialog(this,
+                "Debe seleccionar un producto para eliminar",
+                "Error",
+                JOptionPane.WARNING_MESSAGE);
             return;
         }
-        
-        // Confirmar la eliminación
-        boolean confirmar = confirmar(
-            "¿Está seguro que desea eliminar el producto " + producto.getNombre() + "?");
-        
-        if (confirmar) {
+
+        // Confirmar eliminación
+        int confirmacion = JOptionPane.showConfirmDialog(this,
+            "¿Está seguro de que desea eliminar el producto seleccionado?",
+            "Confirmar eliminación",
+            JOptionPane.YES_NO_OPTION,
+            JOptionPane.WARNING_MESSAGE);
+
+        if (confirmacion == JOptionPane.YES_OPTION) {
             try {
+                // Obtener el ID del producto seleccionado
+                int idProducto = (int) tablaProductos.getValueAt(filaSeleccionada, 0);
+
                 // Eliminar el producto
-                boolean eliminado = app.getProductoService().eliminarProducto(producto.getCodigo());
-                
-                if (eliminado) {
-                    mostrarInformacion("Producto eliminado correctamente.");
-                    cargarProductos();
-                } else {
-                    mostrarError("No se pudo eliminar el producto.");
-                }
+                app.getProductoService().eliminarProducto(idProducto);
+
+                // Recargar la lista de productos
+                cargarProductos();
+
+                JOptionPane.showMessageDialog(this,
+                    "Producto eliminado correctamente",
+                    "Eliminación exitosa",
+                    JOptionPane.INFORMATION_MESSAGE);
+
             } catch (Exception e) {
-                mostrarError("Error al eliminar el producto: " + e.getMessage());
+                JOptionPane.showMessageDialog(this,
+                    "Error al eliminar el producto: " + e.getMessage(),
+                    "Error",
+                    JOptionPane.ERROR_MESSAGE);
             }
         }
+    
+    protected void mostrarError(String mensaje) {
+        JOptionPane.showMessageDialog(this, 
+            mensaje, 
+            "Error", 
+            JOptionPane.ERROR_MESSAGE);
     }
     
     /**
-     * Clase interna para el diálogo de edición de productos.
+     * Diálogo para agregar o editar un producto.
      */
-    private class JDialogProducto extends javax.swing.JDialog {
-        
-        private final ProductoPanel panelPadre;
+    private class JDialogProducto extends JDialog {
         private final Producto producto;
         private boolean guardado = false;
         
-        // Componentes del formulario
-        private JTextField txtCodigo;
-        private JTextField txtNombre;
-        private JTextField txtPrecio;
-        private JComboBox<Impuesto> cmbImpuesto;
-        private JTextField txtCantidad;
-        private JComboBox<String> cmbTipo;
-        private JTextField txtFechaVencimiento;
-        private JButton btnGuardar;
-        private JButton btnCancelar;
-        
-        /**
-         * Crea un nuevo diálogo para agregar o editar un producto.
-         * 
-         * @param panelPadre Panel padre que crea el diálogo
-         * @param producto Producto a editar, o null para crear uno nuevo
-         */
-        public JDialogProducto(ProductoPanel panelPadre, Producto producto) {
-            super(panelPadre, producto == null ? "Nuevo Producto" : "Editar Producto", true);
-            this.panelPadre = panelPadre;
+        // Componentes de la interfaz
+        private final JTextField txtCodigo = new JTextField(15);
+        private final JTextField txtNombre = new JTextField(15);
+        private final JTextField txtPrecio = new JTextField(15);
+        private final JComboBox<Impuesto> cmbImpuesto = new JComboBox<>(Impuesto.values());
+        private final JTextField txtCantidad = new JTextField(15);
+        private final JComboBox<String> cmbTipo = new JComboBox<>(new String[]{"Perecedero", "No perecedero"});
+        private final JTextField txtFechaVencimiento = new JTextField(15);
+        private final JButton btnGuardar = new JButton("Guardar");
+        private final JButton btnCancelar = new JButton("Cancelar");
+        private final JLabel lblFechaVencimiento = new JLabel("Fecha Vencimiento (dd/MM/yyyy):");
+        private final JPanel contentPanel = new JPanel(new BorderLayout());
+        private final JPanel panelCampos = new JPanel(new GridBagLayout());
+        private final JPanel panelBotones = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+
+        public JDialogProducto(Window owner, Producto producto) {
+            super(owner, producto == null ? "Nuevo Producto" : "Editar Producto", ModalityType.APPLICATION_MODAL);
             this.producto = producto;
-            
             initComponents();
             pack();
-            setLocationRelativeTo(panelPadre);
+            setLocationRelativeTo(owner);
         }
         
-        /**
-         * Inicializa los componentes del diálogo.
-         */
+        public boolean isGuardado() {
+            return guardado;
+        }
+
         private void initComponents() {
-            setLayout(new java.awt.GridBagLayout());
+            setLayout(new BorderLayout(10, 10));
+            
+            // Panel principal
+            contentPanel = new JPanel(new BorderLayout(10, 10));
+            contentPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+            
+            // Panel de campos
+            panelCampos = new JPanel(new GridBagLayout());
             GridBagConstraints gbc = new GridBagConstraints();
-            gbc.insets = new Insets(5, 5, 5, 5);
             gbc.anchor = GridBagConstraints.WEST;
+            gbc.insets = new Insets(5, 5, 5, 5);
             
             // Código
             gbc.gridx = 0;
             gbc.gridy = 0;
-            add(new JLabel("Código:"), gbc);
+            panelCampos.add(new JLabel("Código:"), gbc);
             
             txtCodigo = new JTextField(15);
             txtCodigo.setEditable(false);
             gbc.gridx = 1;
-            gbc.fill = GridBagConstraints.HORIZONTAL;
-            add(txtCodigo, gbc);
+            panelCampos.add(txtCodigo, gbc);
             
             // Nombre
             gbc.gridx = 0;
-            gbc.gridy++;
-            add(new JLabel("Nombre:"), gbc);
+            gbc.gridy = 1;
+            panelCampos.add(new JLabel("Nombre:"), gbc);
             
-            txtNombre = new JTextField(30);
+            txtNombre = new JTextField(15);
             gbc.gridx = 1;
-            gbc.gridwidth = 2;
-            gbc.fill = GridBagConstraints.HORIZONTAL;
-            add(txtNombre, gbc);
+            panelCampos.add(txtNombre, gbc);
             
             // Precio
             gbc.gridx = 0;
-            gbc.gridy++;
-            gbc.gridwidth = 1;
-            add(new JLabel("Precio:"), gbc);
+            gbc.gridy = 2;
+            panelCampos.add(new JLabel("Precio:"), gbc);
             
-            txtPrecio = new JTextField(10);
+            txtPrecio = new JTextField(15);
             gbc.gridx = 1;
-            gbc.fill = GridBagConstraints.HORIZONTAL;
-            add(txtPrecio, gbc);
+            panelCampos.add(txtPrecio, gbc);
             
             // Impuesto
-            gbc.gridx = 2;
-            add(new JLabel("Impuesto:"), gbc);
+            gbc.gridx = 0;
+            gbc.gridy = 3;
+            panelCampos.add(new JLabel("Impuesto:"), gbc);
             
             cmbImpuesto = new JComboBox<>(Impuesto.values());
-            gbc.gridx = 3;
-            gbc.fill = GridBagConstraints.HORIZONTAL;
-            add(cmbImpuesto, gbc);
+            gbc.gridx = 1;
+            panelCampos.add(cmbImpuesto, gbc);
             
             // Cantidad
             gbc.gridx = 0;
-            gbc.gridy++;
-            add(new JLabel("Cantidad:"), gbc);
+            gbc.gridy = 4;
+            panelCampos.add(new JLabel("Cantidad:"), gbc);
             
-            txtCantidad = new JTextField(10);
+            txtCantidad = new JTextField(15);
             gbc.gridx = 1;
-            gbc.fill = GridBagConstraints.HORIZONTAL;
-            add(txtCantidad, gbc);
+            panelCampos.add(txtCantidad, gbc);
             
             // Tipo de producto
-            gbc.gridx = 2;
-            add(new JLabel("Tipo:"), gbc);
+            gbc.gridx = 0;
+            gbc.gridy = 5;
+            panelCampos.add(new JLabel("Tipo:"), gbc);
             
             cmbTipo = new JComboBox<>(new String[]{"Perecedero", "No perecedero"});
-            cmbTipo.addActionListener(e -> actualizarCamposTipo());
-            gbc.gridx = 3;
-            gbc.fill = GridBagConstraints.HORIZONTAL;
-            add(cmbTipo, gbc);
-            
-            // Fecha de vencimiento (inicialmente oculto)
-            JLabel lblFechaVencimiento = new JLabel("Vencimiento (dd/mm/aaaa):");
-            gbc.gridx = 0;
-            gbc.gridy++;
-            add(lblFechaVencimiento, gbc);
-            
-            txtFechaVencimiento = new JTextField(10);
+            cmbTipo.addActionListener(e -> actualizarVisibilidadFechaVencimiento());
             gbc.gridx = 1;
-            gbc.fill = GridBagConstraints.HORIZONTAL;
-            add(txtFechaVencimiento, gbc);
+            panelCampos.add(cmbTipo, gbc);
+            
+            // Fecha de vencimiento (inicialmente oculta)
+            lblFechaVencimiento = new JLabel("Fecha Vencimiento (dd/MM/yyyy):");
+            gbc.gridx = 0;
+            gbc.gridy = 6;
+            panelCampos.add(lblFechaVencimiento, gbc);
+            
+            txtFechaVencimiento = new JTextField(15);
+            gbc.gridx = 1;
+            panelCampos.add(txtFechaVencimiento, gbc);
+            
+            // Actualizar visibilidad inicial
+            actualizarVisibilidadFechaVencimiento();
             
             // Panel de botones
-            JPanel panelBotones = new JPanel();
+            panelBotones = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+            
             btnGuardar = new JButton("Guardar");
-            btnCancelar = new JButton("Cancelar");
-            
             btnGuardar.addActionListener(e -> guardarProducto());
-            btnCancelar.addActionListener(e -> dispose());
-            
             panelBotones.add(btnGuardar);
+            
+            btnCancelar = new JButton("Cancelar");
+            btnCancelar.addActionListener(e -> dispose());
             panelBotones.add(btnCancelar);
             
-            gbc.gridx = 0;
-            gbc.gridy++;
-            gbc.gridwidth = 4;
-            gbc.anchor = GridBagConstraints.CENTER;
-            gbc.fill = GridBagConstraints.NONE;
-            add(panelBotones, gbc);
+            // Agregar componentes al panel principal
+            contentPanel.add(panelCampos, BorderLayout.CENTER);
+            contentPanel.add(panelBotones, BorderLayout.SOUTH);
             
-            // Cargar los datos del producto si se está editando
+            add(contentPanel, BorderLayout.CENTER);
+            
+            // Cargar datos del producto si existe
             if (producto != null) {
                 cargarDatosProducto();
-            } else {
-                // Nuevo producto
-                txtCodigo.setText("(Generado automáticamente)");
-                txtCantidad.setText("0");
-                cmbTipo.setSelectedIndex(0);
-                actualizarCamposTipo();
             }
             
-            // Configurar el comportamiento al cerrar
-            setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);
-            addWindowListener(new java.awt.event.WindowAdapter() {
-                @Override
-                public void windowClosing(java.awt.event.WindowEvent windowEvent) {
-                    dispose();
-                }
-            });
-            
-            // Ajustar el tamaño del diálogo
-            pack();
+            // Configurar el diálogo
             setResizable(false);
-            setLocationRelativeTo(panelPadre);
+            pack();
+            setLocationRelativeTo(getParent());
         }
-        
-        /**
-         * Actualiza los campos del formulario según el tipo de producto seleccionado.
-         */
-        private void actualizarCamposTipo() {
-            boolean esPerecedero = cmbTipo.getSelectedIndex() == 0;
-            txtFechaVencimiento.setEnabled(esPerecedero);
-            
-            if (!esPerecedero) {
-                txtFechaVencimiento.setText("");
-            } else if (producto instanceof ProductoPerecedero) {
-                txtFechaVencimiento.setText(
-                    ((ProductoPerecedero) producto).getFechaVencimiento().format(dateFormatter));
-            }
-        }
-        
-        /**
-         * Carga los datos del producto en el formulario.
-         */
+
         private void cargarDatosProducto() {
+            if (producto == null) return;
+            
             txtCodigo.setText(String.valueOf(producto.getCodigo()));
             txtNombre.setText(producto.getNombre());
-            txtPrecio.setText(String.format("%.2f", producto.getPrecio()));
+            txtPrecio.setText(String.valueOf(producto.getPrecio()));
             cmbImpuesto.setSelectedItem(producto.getImpuesto());
-            txtCantidad.setText(String.valueOf(producto.getCantidadDisponible()));
+            txtCantidad.setText(String.valueOf(producto.getCantidadProducto()));
             
-            if (producto instanceof ProductoPerecedero) {
-                cmbTipo.setSelectedIndex(0);
-                txtFechaVencimiento.setText(
-                    ((ProductoPerecedero) producto).getFechaVencimiento().format(dateFormatter));
-            } else {
-                cmbTipo.setSelectedIndex(1);
-            }
+        // Panel de campos
+        panelCampos = new JPanel(new GridBagLayout());
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.anchor = GridBagConstraints.WEST;
+        gbc.insets = new Insets(5, 5, 5, 5);
             
-            actualizarCamposTipo();
+        // Código
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+        panelCampos.add(new JLabel("Código:"), gbc);
+            
+        txtCodigo = new JTextField(15);
+        txtCodigo.setEditable(false);
+        gbc.gridx = 1;
+        panelCampos.add(txtCodigo, gbc);
+            
+        // Nombre
+        gbc.gridx = 0;
+        gbc.gridy = 1;
+        panelCampos.add(new JLabel("Nombre:"), gbc);
+            
+        txtNombre = new JTextField(15);
+        gbc.gridx = 1;
+        panelCampos.add(txtNombre, gbc);
+            
+        // Precio
+        gbc.gridx = 0;
+        gbc.gridy = 2;
+        panelCampos.add(new JLabel("Precio:"), gbc);
+            
+        txtPrecio = new JTextField(15);
+        gbc.gridx = 1;
+        panelCampos.add(txtPrecio, gbc);
+            
+        // Impuesto
+        gbc.gridx = 0;
+        gbc.gridy = 3;
+        panelCampos.add(new JLabel("Impuesto:"), gbc);
+            
+        cmbImpuesto = new JComboBox<>(Impuesto.values());
+        gbc.gridx = 1;
+        panelCampos.add(cmbImpuesto, gbc);
+            
+        // Cantidad
+        gbc.gridx = 0;
+        gbc.gridy = 4;
+        panelCampos.add(new JLabel("Cantidad:"), gbc);
+            
+        txtCantidad = new JTextField(15);
+        gbc.gridx = 1;
+        panelCampos.add(txtCantidad, gbc);
+            
+        // Tipo de producto
+        gbc.gridx = 0;
+        gbc.gridy = 5;
+        panelCampos.add(new JLabel("Tipo:"), gbc);
+            
+        cmbTipo = new JComboBox<>(new String[]{"Perecedero", "No perecedero"});
+        cmbTipo.addActionListener(e -> actualizarVisibilidadFechaVencimiento());
+        gbc.gridx = 1;
+        panelCampos.add(cmbTipo, gbc);
+            
+        // Fecha de vencimiento (inicialmente oculta)
+        lblFechaVencimiento = new JLabel("Fecha Vencimiento (dd/MM/yyyy):");
+        gbc.gridx = 0;
+        gbc.gridy = 6;
+        panelCampos.add(lblFechaVencimiento, gbc);
+            
+        txtFechaVencimiento = new JTextField(15);
+        gbc.gridx = 1;
+        panelCampos.add(txtFechaVencimiento, gbc);
+            
+        // Actualizar visibilidad inicial
+        actualizarVisibilidadFechaVencimiento();
+            
+        // Panel de botones
+        panelBotones = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+            
+        btnGuardar = new JButton("Guardar");
+        btnGuardar.addActionListener(e -> guardarProducto());
+        panelBotones.add(btnGuardar);
+            
+        btnCancelar = new JButton("Cancelar");
+        btnCancelar.addActionListener(e -> dispose());
+        panelBotones.add(btnCancelar);
+            
+        // Agregar componentes al panel principal
+        contentPanel.add(panelCampos, BorderLayout.CENTER);
+        contentPanel.add(panelBotones, BorderLayout.SOUTH);
+            
+        add(contentPanel, BorderLayout.CENTER);
+            
+        // Cargar datos del producto si existe
+        if (producto != null) {
+            cargarDatosProducto();
         }
-        
-        /**
-         * Valida los datos del formulario.
-         * 
-         * @return true si los datos son válidos, false en caso contrario
-         */
-        private boolean validarDatos() {
-            // Validar nombre
-            String nombre = txtNombre.getText().trim();
-            if (nombre.isEmpty()) {
-                mostrarError("El nombre es obligatorio.");
+    }
+    
+    private void actualizarVisibilidadFechaVencimiento() {
+        boolean visible = cmbTipo.getSelectedIndex() == 0; // Visible solo para productos perecederos
+        lblFechaVencimiento.setVisible(visible);
+        txtFechaVencimiento.setVisible(visible);
+        pack();
+    }
+    
+    private void guardarProducto() {
+        try {
+            // Validar campos obligatorios
+            if (txtNombre.getText().trim().isEmpty()) {
+                JOptionPane.showMessageDialog(this, 
+                    "El nombre es obligatorio", 
+                    "Error de validación", 
+                    JOptionPane.ERROR_MESSAGE);
                 txtNombre.requestFocus();
-                return false;
-            }
-            
-            // Validar que el nombre solo contenga letras, números y espacios
-            if (!nombre.matches("^[a-zA-Z0-9áéíóúÁÉÍÓÚñÑ\\s]+")) {
-                mostrarError("El nombre solo puede contener letras, números y espacios.");
-                txtNombre.requestFocus();
-                return false;
-            }
-            
-            // Validar que el nombre no exceda los 100 caracteres
-            if (nombre.length() > 100) {
-                mostrarError("El nombre no puede tener más de 100 caracteres.");
-                txtNombre.requestFocus();
-                return false;
-            }
-            
-            // Validar precio
-            try {
-                double precio = Double.parseDouble(txtPrecio.getText().trim());
-                if (precio <= 0) {
-                    mostrarError("El precio debe ser mayor que cero.");
-                    txtPrecio.requestFocus();
-                    return false;
-                }
-                
-                // Validar que el precio no sea excesivamente alto
-                if (precio > 1_000_000.00) {
-                    mostrarError("El precio no puede ser mayor a ₡1,000,000.00");
-                    txtPrecio.requestFocus();
-                    return false;
-                }
-            } catch (NumberFormatException e) {
-                mostrarError("El precio debe ser un número válido (ejemplo: 1500.50).");
-                txtPrecio.requestFocus();
-                return false;
-            }
-            
-            // Validar cantidad
-            try {
-                int cantidad = Integer.parseInt(txtCantidad.getText().trim());
-                if (cantidad < 0) {
-                    mostrarError("La cantidad no puede ser negativa.");
-                    txtCantidad.requestFocus();
-                    return false;
-                }
-                
-                // Validar que la cantidad no sea excesivamente grande
-                if (cantidad > 100_000) {
-                    mostrarError("La cantidad no puede ser mayor a 100,000 unidades.");
-                    txtCantidad.requestFocus();
-                    return false;
-                }
-            } catch (NumberFormatException e) {
-                mostrarError("La cantidad debe ser un número entero válido (ejemplo: 10).");
-                txtCantidad.requestFocus();
-                return false;
-            }
-            
-            // Validar fecha de vencimiento para productos perecederos
-            if (cmbTipo.getSelectedIndex() == 0) { // Perecedero
-                try {
-                    String fechaStr = txtFechaVencimiento.getText().trim();
-                    if (fechaStr.isEmpty()) {
-                        mostrarError("La fecha de vencimiento es obligatoria para productos perecederos.");
-                        txtFechaVencimiento.requestFocus();
-                        return false;
-                    }
-                    
-                    // Intentar parsear la fecha con el formato especificado
-                    LocalDate fechaVencimiento = LocalDate.parse(fechaStr, dateFormatter);
-                    LocalDate hoy = LocalDate.now();
-                    
-                    if (fechaVencimiento.isBefore(hoy)) {
-                        mostrarError("La fecha de vencimiento no puede ser anterior a la fecha actual (" + 
-                            hoy.format(dateFormatter) + ").");
-                        txtFechaVencimiento.requestFocus();
-                        return false;
-                    }
-                    
-                    // Validar que la fecha no sea demasiado lejana en el futuro (10 años)
-                    LocalDate fechaMaxima = hoy.plusYears(10);
-                    if (fechaVencimiento.isAfter(fechaMaxima)) {
-                        mostrarError("La fecha de vencimiento no puede ser posterior a " + 
-                            fechaMaxima.format(dateFormatter) + ".");
-                        txtFechaVencimiento.requestFocus();
-                        return false;
-                    }
-                } catch (DateTimeParseException e) {
-                    mostrarError("El formato de la fecha debe ser dd/mm/aaaa (ejemplo: 31/12/2023).");
-                    txtFechaVencimiento.requestFocus();
-                    return false;
-                }
-            }
-            
-            return true;
-        }
-        
-        /**
-         * Prepara el objeto Producto con los datos del formulario.
-         * 
-         * @return Producto listo para ser guardado
-         * @throws NumberFormatException si hay un error al convertir los valores numéricos
-         * @throws DateTimeParseException si hay un error al parsear la fecha de vencimiento
-         */
-        private Producto prepararProductoParaGuardar() throws NumberFormatException, DateTimeParseException {
-            Producto productoGuardar;
-            boolean esNuevo = (producto == null);
-            String nombre = txtNombre.getText().trim();
-            double precio = Double.parseDouble(txtPrecio.getText().trim());
-            Impuesto impuesto = (Impuesto) cmbImpuesto.getSelectedItem();
-            int cantidad = Integer.parseInt(txtCantidad.getText().trim());
-            boolean esPerecedero = cmbTipo.getSelectedIndex() == 0;
-            
-            if (esNuevo) {
-                if (esPerecedero) {
-                    ProductoPerecedero pp = new ProductoPerecedero();
-                    pp.setFechaVencimiento(LocalDate.parse(txtFechaVencimiento.getText().trim(), dateFormatter));
-                    productoGuardar = pp;
-                } else {
-                    productoGuardar = new ProductoNoPerecedero();
-                }
-            } else {
-                productoGuardar = producto;
-                
-                // Actualizar la fecha de vencimiento si es perecedero
-                if (productoGuardar instanceof ProductoPerecedero && esPerecedero) {
-                    ((ProductoPerecedero) productoGuardar).setFechaVencimiento(
-                        LocalDate.parse(txtFechaVencimiento.getText().trim(), dateFormatter)
-                    );
-                }
-            }
-            
-            // Establecer los valores comunes
-            productoGuardar.setNombre(nombre);
-            productoGuardar.setPrecio(precio);
-            productoGuardar.setImpuesto(impuesto);
-            productoGuardar.setCantidadDisponible(cantidad);
-            
-            return productoGuardar;
-        }
-        
-        /**
-         * Guarda el producto con los datos del formulario.
-         */
-        private void guardarProducto() {
-            if (!validarDatos()) {
                 return;
             }
             
+            // Validar precio
+            double precio;
             try {
-                // Preparar el producto con los datos del formulario
-                Producto productoGuardar = prepararProductoParaGuardar();
-                boolean esNuevo = (producto == null);
-                
-                // Guardar el producto
-                if (esNuevo) {
-                    productoGuardar = app.getProductoService().registrarProducto(productoGuardar);
-                    JOptionPane.showMessageDialog(this, 
-                        "Producto registrado correctamente con código: " + productoGuardar.getCodigo(),
-                        "Registro exitoso",
-                        JOptionPane.INFORMATION_MESSAGE);
-                } else {
-                    productoGuardar = app.getProductoService().actualizarProducto(productoGuardar);
-                    JOptionPane.showMessageDialog(this, 
-                        "Producto actualizado correctamente.",
-                        "Actualización exitosa",
-                        JOptionPane.INFORMATION_MESSAGE);
+                precio = Double.parseDouble(txtPrecio.getText().trim());
+                if (precio <= 0) {
+                    throw new NumberFormatException();
                 }
-                
-                guardado = true;
-                dispose();
-                
             } catch (NumberFormatException e) {
-                mostrarError("Error en el formato de los datos numéricos: " + e.getMessage());
-            } catch (DateTimeParseException e) {
-                mostrarError("Error en el formato de la fecha de vencimiento: " + e.getMessage());
-            } catch (IllegalArgumentException e) {
-                mostrarError("Error de validación: " + e.getMessage());
-            } catch (javax.persistence.PersistenceException e) {
-                if (e.getCause() != null && e.getCause().getMessage().contains("duplicate key")) {
-                    mostrarError("Ya existe un producto con el mismo nombre.");
-                } else {
-                    mostrarError("Error al guardar el producto en la base de datos: " + e.getMessage());
-                }
-            } catch (Exception e) {
-                mostrarError("Error inesperado al guardar el producto: " + e.getMessage());
-                e.printStackTrace();
+                JOptionPane.showMessageDialog(this, 
+                    "El precio debe ser un número mayor a cero", 
+                    "Error de validación", 
+                    JOptionPane.ERROR_MESSAGE);
+                txtPrecio.requestFocus();
+                return;
             }
-        }
-        
-        /**
-         * Indica si se guardaron los cambios en el producto.
-         * 
-         * @return true si se guardaron los cambios, false en caso contrario
-         */
-        public boolean isGuardado() {
-            return guardado;
+            
+            // Validar cantidad
+            int cantidad;
+            try {
+                cantidad = Integer.parseInt(txtCantidad.getText().trim());
+                if (cantidad < 0) {
+                    throw new NumberFormatException();
+                }
+            } catch (NumberFormatException e) {
+                JOptionPane.showMessageDialog(this, 
+                    "La cantidad debe ser un número entero no negativo", 
+                    "Error de validación", 
+                    JOptionPane.ERROR_MESSAGE);
+                txtCantidad.requestFocus();
+                return;
+            }
+            
+            // Validar fecha de vencimiento si es producto perecedero
+            String fechaVencimiento = null;
+            if (cmbTipo.getSelectedIndex() == 0) { // Perecedero
+                fechaVencimiento = txtFechaVencimiento.getText().trim();
+                if (fechaVencimiento.isEmpty()) {
+                    JOptionPane.showMessageDialog(this, 
+                        "La fecha de vencimiento es obligatoria para productos perecederos", 
+                        "Error de validación", 
+                        JOptionPane.ERROR_MESSAGE);
+                    txtFechaVencimiento.requestFocus();
+                    return;
+                }
+                
+                try {
+                    LocalDate.parse(fechaVencimiento, DATE_FORMATTER);
+                } catch (DateTimeParseException e) {
+                    JOptionPane.showMessageDialog(this, 
+                        "El formato de la fecha de vencimiento debe ser dd/MM/yyyy", 
+                        "Error de validación", 
+                        JOptionPane.ERROR_MESSAGE);
+                    txtFechaVencimiento.requestFocus();
+                    return;
+                }
+            }
+            
+            // Obtener los datos del formulario
+            String nombre = txtNombre.getText().trim();
+            Impuesto impuesto = (Impuesto) cmbImpuesto.getSelectedItem();
+            
+            // Crear o actualizar el producto
+            if (producto == null) {
+                // Nuevo producto
+                if (cmbTipo.getSelectedIndex() == 0) { // Perecedero
+                    producto = new ProductoPerecedero(
+                        nombre, 
+                        "", // descripción vacía por ahora
+                        precio, 
+                        impuesto, 
+                        cantidad, 
+                        String.valueOf(System.currentTimeMillis()), // número de código temporal
+                        fechaVencimiento
+                    );
+                    
+                    // Guardar el nuevo producto perecedero
+                    app.getProductoService().registrarProducto(producto);
+                } else { // No perecedero
+                    producto = new ProductoNoPerecedero(
+                        nombre, 
+                        "", // descripción vacía por ahora
+                        precio, 
+                        impuesto, 
+                        cantidad, 
+                        String.valueOf(System.currentTimeMillis()) // número de código temporal
+                    );
+                    
+                    // Guardar el nuevo producto no perecedero
+                    app.getProductoService().registrarProducto(producto);
+                }
+            } else {
+                // Actualizar producto existente
+                producto.setNombre(nombre);
+                producto.setPrecio(precio);
+                producto.setImpuesto(impuesto);
+                
+                if (producto instanceof ProductoPerecedero) {
+                    ((ProductoPerecedero) producto).setFechaVencimiento(fechaVencimiento);
+                }
+                
+                // Actualizar el producto
+                app.getProductoService().actualizarProducto(producto);
+            }
+            
+            JOptionPane.showMessageDialog(this, 
+                "Producto " + (producto.getCodigo() == 0 ? "guardado" : "actualizado") + " correctamente.",
+                "Operación exitosa",
+                JOptionPane.INFORMATION_MESSAGE);
+                
+            guardado = true;
+            dispose();
+            
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, 
+                "Error al guardar el producto: " + e.getMessage(), 
+                "Error", 
+                JOptionPane.ERROR_MESSAGE);
         }
     }
 }

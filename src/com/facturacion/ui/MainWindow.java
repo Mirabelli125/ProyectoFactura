@@ -41,8 +41,8 @@ public class MainWindow extends JFrame {
     // Paneles de la aplicación
     private ProductoPanel productoPanel;
     private ClientePanel clientePanel;
-    private JPanel facturacionPanel; // Changed from FacturacionPanel to JPanel since we don't have this class yet
-    private JPanel reportesPanel; // Changed from ReportesPanel to JPanel since we don't have this class yet
+    private JPanel facturacionPanel; // Placeholder for future implementation
+    private JPanel reportesPanel; // Placeholder for future implementation
     
     /**
      * Crea una nueva instancia de la ventana principal.
@@ -84,8 +84,13 @@ public class MainWindow extends JFrame {
         try {
             productoPanel = new ProductoPanel(app);
             clientePanel = new ClientePanel(app);
-            facturacionPanel = new FacturacionPanel(app);
-            reportesPanel = new ReportesPanel(app);
+            
+            // Initialize placeholder panels for future implementation
+            facturacionPanel = new JPanel();
+            facturacionPanel.add(new JLabel("Módulo de Facturación (Próximamente)"));
+            
+            reportesPanel = new JPanel();
+            reportesPanel.add(new JLabel("Módulo de Reportes (Próximamente)"));
             
             // Agregar los paneles a las pestañas
             tabbedPane.addTab("Productos", null, productoPanel, "Mantenimiento de productos");

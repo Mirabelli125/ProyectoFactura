@@ -50,6 +50,14 @@ public interface ProductoRepository {
     List<Producto> buscarPorTipo(boolean esPerecedero);
     
     /**
+     * Busca un producto por su ID.
+     * 
+     * @param id ID del producto a buscar
+     * @return Un Optional con el producto si se encuentra, o vacío si no
+     */
+    Optional<Producto> buscarPorId(int id);
+    
+    /**
      * Actualiza un producto existente.
      * 
      * @param producto Producto con los datos actualizados

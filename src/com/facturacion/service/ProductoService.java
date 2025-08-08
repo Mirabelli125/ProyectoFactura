@@ -51,6 +51,14 @@ public interface ProductoService {
     List<Producto> buscarPorTipo(boolean esPerecedero);
     
     /**
+     * Busca un producto por su ID.
+     * 
+     * @param id ID del producto a buscar
+     * @return El producto encontrado, o null si no se encuentra
+     */
+    Producto buscarProductoPorId(int id);
+    
+    /**
      * Actualiza los datos de un producto existente.
      * 
      * @param producto Producto con los datos actualizados

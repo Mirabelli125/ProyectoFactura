@@ -3,12 +3,17 @@ package com.facturacion.ui;
 import com.facturacion.App;
 import com.facturacion.model.Cliente;
 import com.facturacion.model.TipoCliente;
+import com.facturacion.service.ClienteService;
 import java.awt.BorderLayout;
+import java.awt.Dialog;
 import java.awt.Dimension;
+import java.awt.FlowLayout;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
+import java.awt.Window;
 import java.util.List;
+import javax.swing.BorderFactory;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
@@ -22,8 +27,10 @@ import javax.swing.JTable;
 import javax.swing.JTextField;
 import javax.swing.RowFilter;
 import javax.swing.SpinnerNumberModel;
+
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
+import javax.swing.SwingUtilities;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.table.TableModel;
 import javax.swing.table.TableRowSorter;
@@ -41,10 +48,13 @@ public class ClientePanel extends BasePanel {
     private JButton btnNuevo;
     private JButton btnEditar;
     private JButton btnEliminar;
-    private JComboBox<String> cmbTipoCliente;
+    private JComboBox<TipoCliente> cmbTipoFiltro;
     
     // Filtro para la tabla
     private TableRowSorter<TableModel> sorter;
+    
+    // Servicio de clientes
+    private final ClienteService clienteService;
     
     /**
      * Crea una nueva instancia del panel de clientes.
@@ -53,6 +63,9 @@ public class ClientePanel extends BasePanel {
      */
     public ClientePanel(App app) {
         super(app);
+        this.clienteService = app.getClienteService();
+        initComponents();
+        cargarClientes();
     }
     
     @Override
@@ -68,7 +81,7 @@ public class ClientePanel extends BasePanel {
         
         // Panel de búsqueda
         JPanel panelBusqueda = new JPanel(new GridBagLayout());
-        panelBusqueda.setBorder(javax.swing.BorderFactory.createTitledBorder("Búsqueda"));
+        panelBusqueda.setBorder(BorderFactory.createTitledBorder("Búsqueda"));
         
         gbc.gridx = 0;
         gbc.gridy = 0;
@@ -81,11 +94,15 @@ public class ClientePanel extends BasePanel {
         gbc.weightx = 1.0;
         panelBusqueda.add(txtBuscar, gbc);
         
-        cmbTipoCliente = new JComboBox<>(new String[]{"Todos", "Ocasionales", "Corporativos"});
+        // Combo para filtrar por tipo de cliente
+        cmbTipoFiltro = new JComboBox<>(TipoCliente.values());
+        cmbTipoFiltro.insertItemAt(null, 0); // Opción "Todos"
+        cmbTipoFiltro.setSelectedIndex(0);
+        cmbTipoFiltro.addActionListener(e -> filtrarTabla());
         gbc.gridx = 2;
         gbc.fill = GridBagConstraints.NONE;
         gbc.weightx = 0.0;
-        panelBusqueda.add(cmbTipoCliente, gbc);
+        panelBusqueda.add(cmbTipoFiltro, gbc);
         
         // Panel de la tabla
         JPanel panelTabla = new JPanel(new GridBagLayout());
@@ -177,85 +194,97 @@ public class ClientePanel extends BasePanel {
         // Filtrar por texto de búsqueda
         txtBuscar.getDocument().addDocumentListener(new DocumentListener() {
             @Override
+            @SuppressWarnings("unused")
             public void insertUpdate(DocumentEvent e) {
                 filtrarTabla();
             }
             
             @Override
+            @SuppressWarnings("unused")
             public void removeUpdate(DocumentEvent e) {
                 filtrarTabla();
             }
             
             @Override
+            @SuppressWarnings("unused")
             public void changedUpdate(DocumentEvent e) {
                 filtrarTabla();
             }
         });
         
         // Filtrar por tipo de cliente
-        cmbTipoCliente.addActionListener(e -> filtrarTabla());
+        cmbTipoFiltro.addActionListener(e -> filtrarTabla());
     }
     
     /**
-     * Aplica los filtros de búsqueda a la tabla.
+     * Filtra la tabla de clientes según los criterios de búsqueda.
      */
     private void filtrarTabla() {
-        String texto = txtBuscar.getText().toLowerCase();
-        String tipoSeleccionado = (String) cmbTipoCliente.getSelectedItem();
-        
-        sorter.setRowFilter(new RowFilter<TableModel, Integer>() {
-            @Override
-            public boolean include(Entry<? extends TableModel, ? extends Integer> entry) {
-                // Filtrar por texto de búsqueda (cédula, nombre, contacto)
-                String cedula = entry.getStringValue(0).toLowerCase();
-                String nombre = entry.getStringValue(1).toLowerCase();
-                String tipo = entry.getStringValue(2);
-                String contacto = entry.getStringValue(3).toLowerCase();
-                
-                boolean coincideTexto = cedula.contains(texto) || 
-                                      nombre.contains(texto) || 
-                                      contacto.contains(texto);
-                
-                // Filtrar por tipo de cliente
-                boolean coincideTipo = tipoSeleccionado.equals("Todos") ||
-                    (tipoSeleccionado.equals("Ocasionales") && tipo.equals("Ocasional")) ||
-                    (tipoSeleccionado.equals("Corporativos") && tipo.equals("Corporativo"));
-                
-                return coincideTexto && coincideTipo;
-            }
-        });
+        try {
+            String texto = txtBuscar.getText().toLowerCase();
+            TipoCliente tipoFiltro = (TipoCliente) cmbTipoFiltro.getSelectedItem();
+            
+            RowFilter<TableModel, Integer> rf = new RowFilter<TableModel, Integer>() {
+                @Override
+                public boolean include(Entry<? extends TableModel, ? extends Integer> entry) {
+                    // Filtrar por texto de búsqueda
+                    boolean coincideTexto = false;
+                    for (int i = 0; i < entry.getValueCount(); i++) {
+                        if (entry.getStringValue(i).toLowerCase().contains(texto)) {
+                            coincideTexto = true;
+                            break;
+                        }
+                    }
+                    
+                    // Filtrar por tipo de cliente
+                    boolean coincideTipo = true;
+                    if (tipoFiltro != null) {
+                        TipoCliente tipoCliente = (TipoCliente) entry.getValue(2);
+                        coincideTipo = tipoFiltro.equals(tipoCliente);
+                    }
+                    
+                    return coincideTexto && coincideTipo;
+                }
+            };
+            
+            sorter.setRowFilter(rf);
+        } catch (Exception e) {
+            mostrarError("Error al filtrar la tabla: " + e.getMessage());
+            e.printStackTrace();
+        }
     }
     
     /**
      * Carga los clientes desde el servicio y los muestra en la tabla.
      */
     private void cargarClientes() {
-        // Limpiar la tabla
-        modeloTabla.setRowCount(0);
-        
         try {
-            // Obtener todos los clientes
-            List<Cliente> clientes = app.getClienteService().listarTodos();
+            // Limpiar la tabla
+            modeloTabla.setRowCount(0);
             
-            // Agregar cada cliente a la tabla
+            // Obtener todos los clientes del servicio
+            List<Cliente> clientes = clienteService.listarTodos();
+            
+            // Llenar la tabla con los clientes
             for (Cliente cliente : clientes) {
                 modeloTabla.addRow(new Object[]{
-                    String.format("%d-%s", 
-                        (int)(cliente.getCedula() / 1000), 
-                        String.format("%04d", cliente.getCedula() % 10000)),
+                    cliente.getCedula(),
                     cliente.getNombre(),
-                    cliente.getTipo().getDescripcion(),
+                    cliente.getTipo(),
                     cliente.getContacto() != null ? cliente.getContacto() : "N/A",
-                    cliente.isCiudadanoOro(),
+                    cliente.isCiudadanoOro() ? "Sí" : "No",
                     cliente.getPuntos()
                 });
             }
             
             // Ordenar por cédula por defecto
-            tablaClientes.getRowSorter().toggleSortOrder(0);
+            if (tablaClientes.getRowSorter() != null && tablaClientes.getRowSorter().getSortKeys() != null && tablaClientes.getRowSorter().getSortKeys().isEmpty()) {
+                tablaClientes.getRowSorter().toggleSortOrder(0);
+            }
             
         } catch (Exception e) {
             mostrarError("Error al cargar los clientes: " + e.getMessage());
+            e.printStackTrace();
         }
     }
     
@@ -265,15 +294,41 @@ public class ClientePanel extends BasePanel {
      * @param cliente Cliente a editar, o null para crear uno nuevo
      */
     private void mostrarDialogoCliente(Cliente cliente) {
-        // Crear el diálogo
-        JDialogCliente dialogo = new JDialogCliente((JDialog)getTopLevelAncestor(), this, cliente);
-        dialogo.setLocationRelativeTo(this);
-        dialogo.setVisible(true);
+        JDialogCliente dialog = new JDialogCliente(SwingUtilities.getWindowAncestor(this), cliente);
+        dialog.setVisible(true);
         
-        // Si se guardaron los cambios, actualizar la tabla
-        if (dialogo.isGuardado()) {
+        if (dialog.isGuardado()) {
             cargarClientes();
         }
+    }
+
+    /**
+     * Maneja los errores de persistencia mostrando un mensaje al usuario.
+     * 
+     * @param e Excepción de persistencia
+     */
+    private void manejarErrorPersistencia(Exception e) {
+        String mensaje = "Error al guardar el cliente: ";
+        
+        if (e.getCause() != null && e.getCause().getMessage().toLowerCase().contains("unique")) {
+            mensaje += "Ya existe un cliente con esta cédula.";
+        } else {
+            mensaje += e.getMessage();
+        }
+        
+        JOptionPane.showMessageDialog(this, 
+            mensaje, 
+            "Error de persistencia", 
+            JOptionPane.ERROR_MESSAGE);
+    }
+
+    /**
+     * Muestra un mensaje de error en un diálogo.
+     * 
+     * @param mensaje Mensaje de error a mostrar
+     */
+    protected void mostrarError(String mensaje) {
+        JOptionPane.showMessageDialog(this, mensaje, "Error", JOptionPane.ERROR_MESSAGE);
     }
     
     /**
@@ -287,13 +342,17 @@ public class ClientePanel extends BasePanel {
             return null;
         }
         
-        // Obtener la cédula del cliente seleccionado (eliminar guiones y espacios)
-        String cedulaStr = (String) modeloTabla.getValueAt(
-            tablaClientes.convertRowIndexToModel(filaSeleccionada), 0);
-        long cedula = Long.parseLong(cedulaStr.replaceAll("[^0-9]", ""));
+        // Obtener la fila real en el modelo, considerando el ordenamiento
+        int filaModelo = tablaClientes.convertRowIndexToModel(filaSeleccionada);
+        long cedula = (long) modeloTabla.getValueAt(filaModelo, 0);
         
-        // Buscar el cliente en el servicio
-        return app.getClienteService().buscarPorCedula(cedula).orElse(null);
+        try {
+            return clienteService.buscarPorCedula(cedula).orElse(null);
+        } catch (Exception e) {
+            mostrarError("Error al obtener el cliente: " + e.getMessage());
+            e.printStackTrace();
+            return null;
+        }
     }
     
     /**
@@ -325,563 +384,409 @@ public class ClientePanel extends BasePanel {
             return;
         }
         
-        // Confirmar la eliminación
-        boolean confirmar = confirmar(
-            "¿Está seguro que desea eliminar al cliente " + cliente.getNombre() + "?");
+        // Confirmar eliminación
+        int confirmacion = JOptionPane.showConfirmDialog(
+            this,
+            "¿Está seguro de que desea eliminar al cliente " + cliente.getNombre() + "?",
+            "Confirmar eliminación",
+            JOptionPane.YES_NO_OPTION,
+            JOptionPane.WARNING_MESSAGE
+        );
         
-        if (confirmar) {
+        if (confirmacion == JOptionPane.YES_OPTION) {
             try {
-                // Eliminar el cliente
                 boolean eliminado = app.getClienteService().eliminarCliente(cliente.getCedula());
-                
                 if (eliminado) {
-                    mostrarInformacion("Cliente eliminado correctamente.");
+                    JOptionPane.showMessageDialog(
+                        this,
+                        "Cliente eliminado correctamente",
+                        "Eliminación exitosa",
+                        JOptionPane.INFORMATION_MESSAGE
+                    );
                     cargarClientes();
                 } else {
-                    mostrarError("No se pudo eliminar el cliente.");
+                    mostrarError("No se pudo eliminar el cliente. Por favor, intente nuevamente.");
                 }
             } catch (Exception e) {
-                mostrarError("Error al eliminar el cliente: " + e.getMessage());
+                manejarErrorPersistencia(e);
             }
         }
     }
     
     /**
-     * Clase interna para el diálogo de edición de clientes.
+     * Diálogo para agregar o editar un cliente.
      */
     private class JDialogCliente extends JDialog {
-        private static final long serialVersionUID = 1L;
+        private final Cliente cliente;
+        private boolean guardado = false;
         
-        // Componentes del formulario
+        // Componentes de la interfaz
         private JTextField txtCedula;
         private JTextField txtNombre;
         private JComboBox<TipoCliente> cmbTipoCliente;
         private JTextField txtContacto;
-        private JPanel panelContacto;
         private JCheckBox chkCiudadanoOro;
         private JSpinner spnPuntos;
-        private JButton btnGuardar;
-        private JButton btnCancelar;
-        private boolean guardado = false;
-        
-        private final ClientePanel panelPadre;
-        private final Cliente cliente;
         
         /**
          * Crea un nuevo diálogo para agregar o editar un cliente.
          * 
-         * @param panelPadre Panel padre que crea el diálogo
+         * @param parent Ventana padre
          * @param cliente Cliente a editar, o null para crear uno nuevo
          */
-        public JDialogCliente(JDialog parent, ClientePanel panelPadre, Cliente cliente) {
-            super(parent, cliente == null ? "Nuevo Cliente" : "Editar Cliente", true);
-            this.panelPadre = panelPadre;
+        public JDialogCliente(Window parent, Cliente cliente) {
+            super(parent, cliente == null ? "Nuevo Cliente" : "Editar Cliente", Dialog.ModalityType.APPLICATION_MODAL);
             this.cliente = cliente;
-            
             initComponents();
+            cargarDatosCliente();
             pack();
-            setLocationRelativeTo(panelPadre);
+            setLocationRelativeTo(parent);
+            setDefaultCloseOperation(DISPOSE_ON_CLOSE);
         }
         
         /**
          * Inicializa los componentes del diálogo.
          */
         private void initComponents() {
-            setLayout(new GridBagLayout());
+            setLayout(new BorderLayout(10, 10));
+            
+            // Panel principal con márgenes
+            JPanel panelPrincipal = new JPanel(new BorderLayout(10, 10));
+            panelPrincipal.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+            
+            // Panel de campos del formulario
+            JPanel panelCampos = new JPanel(new GridBagLayout());
             GridBagConstraints gbc = new GridBagConstraints();
             gbc.insets = new Insets(5, 5, 5, 5);
             gbc.anchor = GridBagConstraints.WEST;
+            gbc.fill = GridBagConstraints.HORIZONTAL;
             
-            // Cédula
+            // Campo Cédula
             gbc.gridx = 0;
             gbc.gridy = 0;
-            add(new JLabel("Cédula:"), gbc);
+            panelCampos.add(new JLabel("Cédula:"), gbc);
             
-            txtCedula = new JTextField(15);
-            txtCedula.setEditable(cliente == null); // Solo editable para nuevos clientes
+            txtCedula = new JTextField(20);
+            txtCedula.setEditable(cliente == null); // Solo editable para nuevo cliente
             gbc.gridx = 1;
-            gbc.gridwidth = 2;
-            gbc.fill = GridBagConstraints.HORIZONTAL;
-            add(txtCedula, gbc);
+            panelCampos.add(txtCedula, gbc);
             
-            // Nombre
+            // Campo Nombre
             gbc.gridx = 0;
             gbc.gridy++;
-            gbc.gridwidth = 1;
-            add(new JLabel("Nombre:"), gbc);
+            panelCampos.add(new JLabel("Nombre:"), gbc);
             
-            txtNombre = new JTextField(30);
+            txtNombre = new JTextField(20);
             gbc.gridx = 1;
-            gbc.gridwidth = 2;
-            gbc.fill = GridBagConstraints.HORIZONTAL;
-            add(txtNombre, gbc);
+            panelCampos.add(txtNombre, gbc);
             
-            // Tipo de cliente
+            // Campo Tipo de Cliente
             gbc.gridx = 0;
             gbc.gridy++;
-            gbc.gridwidth = 1;
-            add(new JLabel("Tipo:"), gbc);
+            panelCampos.add(new JLabel("Tipo:"), gbc);
             
             cmbTipoCliente = new JComboBox<>(TipoCliente.values());
-            cmbTipoCliente.addActionListener(e -> actualizarCamposTipo());
+            cmbTipoCliente.addActionListener(e -> actualizarCamposSegunTipo());
             gbc.gridx = 1;
-            gbc.gridwidth = 2;
-            gbc.fill = GridBagConstraints.HORIZONTAL;
-            add(cmbTipoCliente, gbc);
+            panelCampos.add(cmbTipoCliente, gbc);
             
-            // Panel de contacto (inicialmente oculto)
-            panelContacto = new JPanel(new GridBagLayout());
-            gbc.gridx = 0;
-            gbc.gridy++;
-            gbc.gridwidth = 3;
-            gbc.fill = GridBagConstraints.HORIZONTAL;
-            add(panelContacto, gbc);
+            // Panel para campos específicos del tipo de cliente
+            JPanel panelTipoCliente = new JPanel(new GridBagLayout());
+            panelTipoCliente.setBorder(BorderFactory.createTitledBorder("Detalles del Cliente"));
+            GridBagConstraints gbcTipo = new GridBagConstraints();
+            gbcTipo.insets = new Insets(5, 5, 5, 5);
+            gbcTipo.anchor = GridBagConstraints.WEST;
+            gbcTipo.fill = GridBagConstraints.HORIZONTAL;
             
-            // Ciudadano Oro
-            gbc.gridx = 0;
-            gbc.gridy++;
-            gbc.gridwidth = 1;
-            add(new JLabel("Ciudadano Oro:"), gbc);
-            
-            chkCiudadanoOro = new JCheckBox();
+            // Campos para clientes ocasionales
+            chkCiudadanoOro = new JCheckBox("Ciudadano Oro");
             chkCiudadanoOro.addActionListener(e -> actualizarCamposPuntos());
-            gbc.gridx = 1;
-            gbc.anchor = GridBagConstraints.WEST;
-            add(chkCiudadanoOro, gbc);
+            gbcTipo.gridx = 0;
+            gbcTipo.gridy = 0;
+            gbcTipo.gridwidth = 2;
+            panelTipoCliente.add(chkCiudadanoOro, gbcTipo);
             
-            // Puntos (inicialmente deshabilitado)
-            gbc.gridx = 2;
-            gbc.anchor = GridBagConstraints.EAST;
-            add(new JLabel("Puntos:"), gbc);
+            gbcTipo.gridx = 0;
+            gbcTipo.gridy++;
+            gbcTipo.gridwidth = 1;
+            panelTipoCliente.add(new JLabel("Puntos:"), gbcTipo);
             
-            spnPuntos = new JSpinner(new javax.swing.SpinnerNumberModel(0, 0, Integer.MAX_VALUE, 1));
+            spnPuntos = new JSpinner(new SpinnerNumberModel(0, 0, Integer.MAX_VALUE, 1));
             spnPuntos.setEnabled(false);
-            gbc.gridx = 3;
-            gbc.anchor = GridBagConstraints.WEST;
-            add(spnPuntos, gbc);
+            gbcTipo.gridx = 1;
+            panelTipoCliente.add(spnPuntos, gbcTipo);
             
-            // Panel de botones
-            JPanel panelBotones = new JPanel();
-            btnGuardar = new JButton("Guardar");
-            btnCancelar = new JButton("Cancelar");
+            // Campo para clientes corporativos
+            gbcTipo.gridx = 0;
+            gbcTipo.gridy++;
+            gbcTipo.gridwidth = 2;
+            panelTipoCliente.add(new JLabel("Contacto:"), gbcTipo);
+            
+            txtContacto = new JTextField(20);
+            gbcTipo.gridy++;
+            panelTipoCliente.add(txtContacto, gbcTipo);
+            
+            // Agregar paneles al diálogo
+            gbc.gridx = 0;
+            gbc.gridy++;
+            gbc.gridwidth = 2;
+            panelCampos.add(panelTipoCliente, gbc);
+            
+            // Botones
+            JPanel panelBotones = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+            JButton btnGuardar = new JButton("Guardar");
+            JButton btnCancelar = new JButton("Cancelar");
             
             btnGuardar.addActionListener(e -> guardarCliente());
             btnCancelar.addActionListener(e -> dispose());
             
+            // Configurar tecla Enter para guardar
+            getRootPane().setDefaultButton(btnGuardar);
+            
             panelBotones.add(btnGuardar);
             panelBotones.add(btnCancelar);
             
-            gbc.gridx = 0;
-            gbc.gridy++;
-            gbc.gridwidth = 4;
-    
-    /**
-     * Inicializa los componentes del diálogo.
-     */
-    private void initComponents() {
-        setLayout(new GridBagLayout());
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.insets = new Insets(5, 5, 5, 5);
-        gbc.anchor = GridBagConstraints.WEST;
-        
-        // Cédula
-        gbc.gridx = 0;
-        gbc.gridy = 0;
-        add(new JLabel("Cédula:"), gbc);
-        
-        txtCedula = new JTextField(15);
-        txtCedula.setEditable(cliente == null); // Solo editable para nuevos clientes
-        gbc.gridx = 1;
-        gbc.gridwidth = 2;
-        gbc.fill = GridBagConstraints.HORIZONTAL;
-        add(txtCedula, gbc);
-        
-        // Nombre
-        gbc.gridx = 0;
-        gbc.gridy++;
-        gbc.gridwidth = 1;
-        add(new JLabel("Nombre:"), gbc);
-        
-        txtNombre = new JTextField(30);
-        gbc.gridx = 1;
-        gbc.gridwidth = 2;
-        gbc.fill = GridBagConstraints.HORIZONTAL;
-        add(txtNombre, gbc);
-        
-        // Tipo de cliente
-        gbc.gridx = 0;
-        gbc.gridy++;
-        gbc.gridwidth = 1;
-        add(new JLabel("Tipo:"), gbc);
-        
-        cmbTipoCliente = new JComboBox<>(TipoCliente.values());
-        cmbTipoCliente.addActionListener(e -> actualizarCamposTipo());
-        gbc.gridx = 1;
-        gbc.gridwidth = 2;
-        gbc.fill = GridBagConstraints.HORIZONTAL;
-        add(cmbTipoCliente, gbc);
-        
-        // Panel de contacto (inicialmente oculto)
-        panelContacto = new JPanel(new GridBagLayout());
-        gbc.gridx = 0;
-        gbc.gridy++;
-        gbc.gridwidth = 3;
-        gbc.fill = GridBagConstraints.HORIZONTAL;
-        add(panelContacto, gbc);
-        
-        // Ciudadano Oro
-        gbc.gridx = 0;
-        gbc.gridy++;
-        gbc.gridwidth = 1;
-        add(new JLabel("Ciudadano Oro:"), gbc);
-        
-        chkCiudadanoOro = new JCheckBox();
-        chkCiudadanoOro.addActionListener(e -> actualizarCamposPuntos());
-        gbc.gridx = 1;
-        gbc.anchor = GridBagConstraints.WEST;
-        add(chkCiudadanoOro, gbc);
-        
-        // Puntos (inicialmente deshabilitado)
-        gbc.gridx = 2;
-        gbc.anchor = GridBagConstraints.EAST;
-        add(new JLabel("Puntos:"), gbc);
-        
-        spnPuntos = new JSpinner(new javax.swing.SpinnerNumberModel(0, 0, Integer.MAX_VALUE, 1));
-        spnPuntos.setEnabled(false);
-        gbc.gridx = 3;
-        gbc.anchor = GridBagConstraints.WEST;
-        add(spnPuntos, gbc);
-        
-        // Panel de botones
-        JPanel panelBotones = new JPanel();
-        btnGuardar = new JButton("Guardar");
-        btnCancelar = new JButton("Cancelar");
-        
-        btnGuardar.addActionListener(e -> guardarCliente());
-        btnCancelar.addActionListener(e -> dispose());
-        
-        panelBotones.add(btnGuardar);
-        panelBotones.add(btnCancelar);
-        
-        gbc.gridx = 0;
-        gbc.gridy++;
-        gbc.gridwidth = 4;
-        gbc.anchor = GridBagConstraints.CENTER;
-        gbc.fill = GridBagConstraints.NONE;
-        add(panelBotones, gbc);
-        
-        // Cargar los datos del cliente si se está editando
-        if (cliente != null) {
-            cargarDatosCliente();
-        } else {
-            // Nuevo cliente - valores por defecto
-            cmbTipoCliente.setSelectedItem(TipoCliente.OCASIONALES);
-            actualizarCamposTipo();
-            actualizarCamposPuntos();
+            // Agregar todo al panel principal
+            panelPrincipal.add(panelCampos, BorderLayout.CENTER);
+            panelPrincipal.add(panelBotones, BorderLayout.SOUTH);
+            
+            add(panelPrincipal, BorderLayout.CENTER);
         }
         
-        // Configurar el comportamiento al cerrar
-        setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);
-        addWindowListener(new java.awt.event.WindowAdapter() {
-            @Override
-            public void windowClosing(java.awt.event.WindowEvent windowEvent) {
-                dispose();
+        /**
+         * Actualiza los campos según el tipo de cliente seleccionado.
+         */
+        private void actualizarCamposSegunTipo() {
+            TipoCliente tipo = (TipoCliente) cmbTipoCliente.getSelectedItem();
+            boolean esOcasional = tipo == TipoCliente.OCASIONALES;
+            
+            chkCiudadanoOro.setEnabled(esOcasional);
+            spnPuntos.setEnabled(esOcasional && chkCiudadanoOro.isSelected());
+            
+            // Mostrar u ocultar campos según el tipo de cliente
+            txtContacto.setEnabled(!esOcasional);
+            
+            // Si es corporativo, asegurarse que no sea ciudadano de oro
+            if (!esOcasional) {
+                chkCiudadanoOro.setSelected(false);
             }
-        });
-        
-        // Ajustar el tamaño del diálogo
-        pack();
-        setResizable(false);
-        setLocationRelativeTo(panelPadre);
-    }
-    
-    /**
-     * Carga los datos del cliente en el formulario.
-     */
-    private void cargarDatosCliente() {
-        txtCedula.setText(String.format("%d-%s", 
-            (int)(cliente.getCedula() / 1000), 
-            String.format("%04d", cliente.getCedula() % 10000)));
-        
-        txtNombre.setText(cliente.getNombre());
-        cmbTipoCliente.setSelectedItem(cliente.getTipo());
-        
-        // Actualizar los campos según el tipo de cliente
-        actualizarCamposTipo();
-        
-        // Verificar si el cliente es ciudadano de oro y actualizar los campos
-        chkCiudadanoOro.setSelected(cliente.isCiudadanoOro());
-        spnPuntos.setValue(cliente.getPuntos());
-        
-        actualizarCamposPuntos();
-    }
-    
-    /**
-     * Actualiza los campos del formulario según el tipo de cliente seleccionado.
-     */
-    private void actualizarCamposTipo() {
-        TipoCliente tipo = (TipoCliente) cmbTipoCliente.getSelectedItem();
-        
-        // Limpiar el panel de contacto
-        panelContacto.removeAll();
-        
-        if (tipo == TipoCliente.CORPORATIVOS) {
-            // Mostrar campo de contacto para clientes corporativos
-            panelContacto.setVisible(true);
-            
-            GridBagConstraints gbc = new GridBagConstraints();
-            gbc.insets = new Insets(0, 0, 0, 5);
-            gbc.anchor = GridBagConstraints.WEST;
-            
-            gbc.gridx = 0;
-            gbc.gridy = 0;
-            panelContacto.add(new JLabel("Persona de contacto:"), gbc);
-            
-            txtContacto = new JTextField(25);
-            gbc.gridx = 1;
-            gbc.weightx = 1.0;
-            gbc.fill = GridBagConstraints.HORIZONTAL;
-            panelContacto.add(txtContacto, gbc);
-        } else {
-            // Ocultar el panel de contacto para clientes ocasionales
-            panelContacto.setVisible(false);
         }
         
-        // Revalidar y redibujar el diálogo
-        revalidate();
-        pack();
-    }
-    
-    /**
-     * Actualiza el estado del campo de puntos según la selección de Ciudadano Oro.
-     */
-    private void actualizarCamposPuntos() {
-        boolean esCiudadanoOro = chkCiudadanoOro.isSelected();
-        spnPuntos.setEnabled(esCiudadanoOro);
-        
-        if (!esCiudadanoOro) {
-            spnPuntos.setValue(0);
+        /**
+         * Actualiza el estado del campo de puntos según la selección de ciudadano de oro.
+         */
+        private void actualizarCamposPuntos() {
+            boolean esCiudadanoOro = chkCiudadanoOro.isSelected();
+            spnPuntos.setEnabled(esCiudadanoOro);
+            if (!esCiudadanoOro) {
+                spnPuntos.setValue(0);
+            }
         }
-    }
-    
-    /**
-     * Valida los datos del formulario.
-     * 
-     * @return true si los datos son válidos, false en caso contrario
-     */
-    private boolean validarDatos() {
-        // Validar cédula
-        try {
-            String cedulaStr = txtCedula.getText().trim().replaceAll("[^0-9]", "");
-            if (cedulaStr.length() < 9 || cedulaStr.length() > 10) {
-                mostrarError("La cédula debe tener entre 9 y 10 dígitos.");
+        
+        /**
+         * Carga los datos del cliente en el formulario.
+         */
+        private void cargarDatosCliente() {
+            if (cliente != null) {
+                txtCedula.setText(String.valueOf(cliente.getCedula()));
+                txtNombre.setText(cliente.getNombre());
+                cmbTipoCliente.setSelectedItem(cliente.getTipo());
+                
+                if (cliente.getTipo() == TipoCliente.CORPORATIVOS) {
+                    txtContacto.setText(cliente.getContacto());
+                } else {
+                    chkCiudadanoOro.setSelected(cliente.isCiudadanoOro());
+                    spnPuntos.setValue(cliente.getPuntos());
+                }
+            } else {
+                // Valores por defecto para nuevo cliente
+                cmbTipoCliente.setSelectedItem(TipoCliente.OCASIONALES);
+                chkCiudadanoOro.setSelected(false);
+                spnPuntos.setValue(0);
+            }
+            
+            // Actualizar estado inicial de los campos
+            actualizarCamposSegunTipo();
+        }
+        
+        /**
+         * Guarda los datos del cliente.
+         */
+        private void guardarCliente() {
+            try {
+                if (validarDatos()) {
+                    // Crear o actualizar el cliente
+                    Cliente clienteGuardar;
+                    long cedula = Long.parseLong(txtCedula.getText().trim());
+                    String nombre = txtNombre.getText().trim();
+                    TipoCliente tipo = (TipoCliente) cmbTipoCliente.getSelectedItem();
+                    String contacto = tipo == TipoCliente.CORPORATIVOS ? txtContacto.getText().trim() : "";
+                    
+                    if (this.cliente == null) {
+                        // Nuevo cliente
+                        clienteGuardar = new Cliente(cedula, nombre, tipo, contacto);
+                        
+                        // Configurar ciudadano de oro si aplica
+                        if (tipo == TipoCliente.OCASIONALES) {
+                            boolean esCiudadanoOro = chkCiudadanoOro.isSelected();
+                            clienteGuardar.setCiudadanoOro(esCiudadanoOro);
+                            
+                            if (esCiudadanoOro) {
+                                int puntos = (Integer) spnPuntos.getValue();
+                                if (puntos > 0) {
+                                    clienteGuardar.agregarPuntos(puntos);
+                                }
+                            }
+                        }
+                        
+                        // Registrar el nuevo cliente
+                        app.getClienteService().registrarCliente(clienteGuardar);
+                    } else {
+                        // Actualizar cliente existente
+                        clienteGuardar = this.cliente;
+                        clienteGuardar.setNombre(nombre);
+                        clienteGuardar.setTipo(tipo);
+                        
+                        if (tipo == TipoCliente.CORPORATIVOS) {
+                            clienteGuardar.setContacto(contacto);
+                        } else {
+                            boolean esCiudadanoOro = chkCiudadanoOro.isSelected();
+                            clienteGuardar.setCiudadanoOro(esCiudadanoOro);
+                            
+                            if (esCiudadanoOro) {
+                                int nuevosPuntos = (Integer) spnPuntos.getValue();
+                                int puntosActuales = clienteGuardar.getPuntos();
+                                
+                                if (nuevosPuntos > puntosActuales) {
+                                    int puntosAAgregar = nuevosPuntos - puntosActuales;
+                                    clienteGuardar.agregarPuntos(puntosAAgregar);
+                                }
+                            } else {
+                                // Si ya no es ciudadano de oro, se mantienen los puntos pero no se pueden modificar
+                                // Se podría considerar si se desea resetear los puntos
+                            }
+                        }
+                        
+                        // Actualizar el cliente
+                        app.getClienteService().actualizarCliente(clienteGuardar);
+                    }
+                    
+                    guardado = true;
+                    dispose();
+                }
+            } catch (NumberFormatException e) {
+                mostrarError("La cédula debe ser un número válido.");
+            } catch (IllegalArgumentException | IllegalStateException e) {
+                mostrarError(e.getMessage());
+            } catch (Exception e) {
+                manejarErrorPersistencia(e);
+            }
+        }
+        
+        /**
+         * Valida los datos del formulario.
+         * 
+         * @return true si los datos son válidos, false en caso contrario
+         */
+        private boolean validarDatos() {
+            // Validar cédula
+            String cedulaStr = txtCedula.getText().trim();
+            if (cedulaStr.isEmpty()) {
+                mostrarError("La cédula es obligatoria.");
                 txtCedula.requestFocus();
                 return false;
             }
             
-            long cedula = Long.parseLong(cedulaStr);
-            
-            // Si es un nuevo cliente o la cédula ha cambiado, verificar que no exista
-            if (cliente == null || cliente.getCedula() != cedula) {
-                if (app.getClienteService().buscarPorCedula(cedula).isPresent()) {
-                    mostrarError("Ya existe un cliente con esta cédula.");
+            try {
+                long cedula = Long.parseLong(cedulaStr);
+                if (cedula <= 0) {
+                    mostrarError("La cédula debe ser un número positivo.");
                     txtCedula.requestFocus();
                     return false;
                 }
-            }
-        } catch (NumberFormatException e) {
-            mostrarError("La cédula debe ser un número válido.");
-            txtCedula.requestFocus();
-            return false;
-        }
-        
-        // Validar nombre
-        String nombre = txtNombre.getText().trim();
-        if (nombre.isEmpty()) {
-            mostrarError("El nombre es obligatorio.");
-            txtNombre.requestFocus();
-            return false;
-        }
-        
-        // Validar que el nombre solo contenga letras y espacios
-        if (!nombre.matches("^[a-zA-ZáéíóúÁÉÍÓÚñÑ\\s]+")) {
-            mostrarError("El nombre solo puede contener letras y espacios.");
-            txtNombre.requestFocus();
-            return false;
-        }
-        
-        // Validar contacto para clientes corporativos
-        TipoCliente tipo = (TipoCliente) cmbTipoCliente.getSelectedItem();
-        if (tipo == TipoCliente.CORPORATIVOS) {
-            String contacto = txtContacto.getText().trim();
-            if (contacto.isEmpty()) {
-                mostrarError("El contacto es obligatorio para clientes corporativos.");
-                txtContacto.requestFocus();
+            } catch (NumberFormatException e) {
+                mostrarError("La cédula debe contener solo números.");
+                txtCedula.requestFocus();
                 return false;
             }
             
-            // Validar formato del contacto (nombre apellido)
-            if (!contacto.matches("^[a-zA-ZáéíóúÁÉÍÓÚñÑ]+\\s+[a-zA-ZáéíóúÁÉÍÓÚñÑ\\s]*")) {
-                mostrarError("El contacto debe incluir al menos un nombre y un apellido.");
-                txtContacto.requestFocus();
-                return false;
-            }
-        }
-        
-        return true;
-    }
-    
-    /**
-     * Guarda el cliente en la base de datos.
-     */
-     * Maneja la lógica de creación o actualización de clientes.
-     */
-    private void guardarCliente() {
-        if (!validarDatos()) {
-            return;
-        }
-        
-        try {
-            // Obtener los datos del formulario
-            long cedula = Long.parseLong(txtCedula.getText().trim().replaceAll("[^0-9]", ""));
+            // Validar nombre
             String nombre = txtNombre.getText().trim();
+            if (nombre.isEmpty()) {
+                mostrarError("El nombre es obligatorio.");
+                txtNombre.requestFocus();
+                return false;
+            }
+            
+            // Validar que el nombre solo contenga letras y espacios
+            if (!nombre.matches("^[\\p{L} .'-]+$")) {
+                mostrarError("El nombre solo puede contener letras y espacios.");
+                txtNombre.requestFocus();
+                return false;
+            }
+            
+            // Validar contacto si es cliente corporativo
             TipoCliente tipo = (TipoCliente) cmbTipoCliente.getSelectedItem();
-            boolean esCiudadanoOro = chkCiudadanoOro.isSelected();
-            int puntos = esCiudadanoOro ? (int) spnPuntos.getValue() : 0;
-            
-            // Obtener el contacto si es un cliente corporativo
-            String contactoCliente = null;
             if (tipo == TipoCliente.CORPORATIVOS) {
-                contactoCliente = txtContacto != null ? txtContacto.getText().trim() : "";
+                String contacto = txtContacto.getText().trim();
+                if (contacto.isEmpty()) {
+                    mostrarError("El contacto es obligatorio para clientes corporativos.");
+                    txtContacto.requestFocus();
+                    return false;
+                }
             }
             
-            Cliente clienteGuardar = prepararClienteParaGuardar(cedula, nombre, tipo, contactoCliente, esCiudadanoOro, puntos);
-            
-            // Determinar si es una operación de creación o actualización
-            boolean esNuevo = (cliente == null);
-            
-            // Guardar el cliente
-            if (esNuevo) {
-                ClientePanel.this.app.getClienteService().registrarCliente(clienteGuardar);
-                JOptionPane.showMessageDialog(this, 
-                    "Cliente registrado exitosamente.", 
-                    "Éxito", 
-                    JOptionPane.INFORMATION_MESSAGE);
-            } else {
-                ClientePanel.this.app.getClienteService().actualizarCliente(clienteGuardar);
-                JOptionPane.showMessageDialog(this, 
-                    "Cliente actualizado exitosamente.", 
-                    "Éxito", 
-                    JOptionPane.INFORMATION_MESSAGE);
+            // Validar puntos si es ciudadano de oro
+            if (tipo == TipoCliente.OCASIONALES && chkCiudadanoOro.isSelected()) {
+                try {
+                    int puntos = (Integer) spnPuntos.getValue();
+                    if (puntos < 0) {
+                        mostrarError("Los puntos no pueden ser negativos.");
+                        spnPuntos.requestFocus();
+                        return false;
+                    }
+                } catch (Exception e) {
+                    mostrarError("El valor de puntos no es válido.");
+                    spnPuntos.requestFocus();
+                    return false;
+                }
             }
             
-            guardado = true;
-            dispose();
-            
-        } catch (javax.persistence.PersistenceException pe) {
-            manejarErrorPersistencia(pe);
-        } catch (IllegalArgumentException iae) {
+            return true;
+        }
+        
+        /**
+         * Muestra un mensaje de error en un diálogo.
+         * 
+         * @param mensaje Mensaje de error a mostrar
+         */
+        private void mostrarError(String mensaje) {
             JOptionPane.showMessageDialog(this, 
-                "Error de validación: " + iae.getMessage(), 
+                mensaje, 
                 "Error de validación", 
-                JOptionPane.WARNING_MESSAGE);
-        } catch (Exception e) {
-            JOptionPane.showMessageDialog(this, 
-                "Error inesperado al guardar el cliente: " + e.getMessage(), 
-                "Error", 
                 JOptionPane.ERROR_MESSAGE);
-            e.printStackTrace();
-        }
-    }
-    
-    /**
-     * Prepara el objeto Cliente con los datos del formulario.
-     * 
-     * @param cedula Número de cédula del cliente
-     * @param nombre Nombre del cliente
-     * @param tipo Tipo de cliente (OCASIONALES o CORPORATIVOS)
-     * @param contactoCliente Contacto del cliente (solo para corporativos)
-     * @param esCiudadanoOro Indica si es cliente ciudadano de oro
-     * @param puntos Puntos del cliente (solo para ciudadanos de oro)
-     * @return Objeto Cliente listo para ser guardado
-     */
-    private Cliente prepararClienteParaGuardar(long cedula, String nombre, TipoCliente tipo, 
-                                             String contactoCliente, boolean esCiudadanoOro, int puntos) {
-        if (cliente == null) {
-            // Crear nuevo cliente
-            Cliente nuevoCliente = new Cliente(cedula, nombre, tipo, contactoCliente);
-            
-            // Configurar ciudadano de oro si aplica
-            if (tipo == TipoCliente.OCASIONALES) {
-                nuevoCliente.setCiudadanoOro(esCiudadanoOro);
-                if (esCiudadanoOro) {
-                    nuevoCliente.agregarPuntos(puntos);
-                }
-            }
-            
-            return nuevoCliente;
-        } else {
-            // Actualizar cliente existente
-            cliente.setNombre(nombre);
-            cliente.setTipo(tipo);
-            
-            // Actualizar el contacto si es un cliente corporativo
-            if (tipo == TipoCliente.CORPORATIVOS) {
-                cliente.setContacto(contactoCliente);
-            }
-            
-            // Actualizar estado de ciudadano de oro y puntos
-            if (tipo == TipoCliente.OCASIONALES) {
-                if (esCiudadanoOro) {
-                    if (!cliente.isCiudadanoOro()) {
-                        cliente.setCiudadanoOro(true);
-                    }
-                    // Actualizar puntos manteniendo los existentes
-                    int puntosActuales = cliente.getPuntos();
-                    int diferenciaPuntos = puntos - puntosActuales;
-                    if (diferenciaPuntos > 0) {
-                        cliente.agregarPuntos(diferenciaPuntos);
-                    } else if (diferenciaPuntos < 0) {
-                        // No permitir canjear más puntos de los disponibles
-                        cliente.canjearPuntos(-diferenciaPuntos);
-                    }
-                } else {
-                    cliente.setCiudadanoOro(false);
-                }
-            }
-            
-            return cliente;
-        }
-    }
-    
-    /**
-     * Maneja los errores de persistencia mostrando mensajes de error apropiados.
-     * 
-     * @param pe Excepción de persistencia
-     */
-    private void manejarErrorPersistencia(javax.persistence.PersistenceException pe) {
-        String mensaje = "Error al guardar el cliente: ";
-        
-        // Verificar si es una violación de restricción única (cliente duplicado)
-        if (pe.getCause() != null && pe.getCause().getMessage().contains("duplicate key")) {
-            mensaje += "Ya existe un cliente con esta cédula.";
-        } else {
-            mensaje += pe.getMessage();
         }
         
-        JOptionPane.showMessageDialog(this, 
-            mensaje, 
-            "Error de persistencia", 
-            JOptionPane.ERROR_MESSAGE);
-    }
-    }
-    
-    /**
-     * Muestra un mensaje de error en un diálogo.
-     * 
-     * @param mensaje Mensaje de error a mostrar
-     */
-    protected void mostrarError(String mensaje) {
-        JOptionPane.showMessageDialog(this, mensaje, "Error", JOptionPane.ERROR_MESSAGE);
+        /**
+         * Maneja los errores de persistencia.
+         * 
+         * @param e Excepción ocurrida
+         */
+        private void manejarErrorPersistencia(Exception e) {
+            String mensaje = "Error al guardar el cliente: " + e.getMessage();
+            if (e.getCause() != null) {
+                mensaje += "\nCausa: " + e.getCause().getMessage();
+            }
+            mostrarError(mensaje);
+        }
+        
+        /**
+         * Indica si se guardaron los cambios en el cliente.
+         * 
+         * @return true si se guardaron los cambios, false en caso contrario
+         */
+        public boolean isGuardado() {
+            return guardado;
+        }
     }
 }
