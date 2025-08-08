@@ -2,7 +2,7 @@ package com.facturacion.service;
 
 import com.facturacion.model.Factura;
 import com.facturacion.model.Pago;
-import java.time.LocalDate;
+import java.util.Date;
 import java.util.List;
 import java.util.Optional;
 
@@ -51,7 +51,21 @@ public interface FacturaService {
      * @param fechaFin Fecha de fin (inclusive)
      * @return Lista de facturas en el rango de fechas
      */
-    List<Factura> buscarPorRangoFechas(LocalDate fechaInicio, LocalDate fechaFin);
+    /**
+     * Busca facturas por rango de fechas.
+     * 
+     * @param fechaInicio Fecha de inicio (inclusive)
+     * @param fechaFin Fecha de fin (inclusive)
+     * @return Lista de facturas en el rango de fechas
+     */
+    List<Factura> buscarPorRangoFechas(Date fechaInicio, Date fechaFin);
+    
+    /**
+     * Busca las facturas del día actual.
+     * 
+     * @return Lista de facturas del día actual
+     */
+    List<Factura> buscarDelDia();
     
     /**
      * Procesa el pago de una factura.
@@ -78,7 +92,14 @@ public interface FacturaService {
      * @param fechaFin Fecha de fin (inclusive)
      * @return Total de ventas en el rango de fechas
      */
-    double obtenerTotalVentas(LocalDate fechaInicio, LocalDate fechaFin);
+    /**
+     * Obtiene el total de ventas en un rango de fechas.
+     * 
+     * @param fechaInicio Fecha de inicio (inclusive)
+     * @param fechaFin Fecha de fin (inclusive)
+     * @return Total de ventas en el rango de fechas
+     */
+    double obtenerTotalVentas(Date fechaInicio, Date fechaFin);
     
     /**
      * Obtiene el total de impuestos recaudados en un rango de fechas.
@@ -87,7 +108,7 @@ public interface FacturaService {
      * @param fechaFin Fecha de fin (inclusive)
      * @return Total de impuestos recaudados en el rango de fechas
      */
-    double obtenerTotalImpuestos(LocalDate fechaInicio, LocalDate fechaFin);
+    double obtenerTotalImpuestos(Date fechaInicio, Date fechaFin);
     
     /**
      * Obtiene el total de descuentos aplicados en un rango de fechas.
@@ -96,7 +117,7 @@ public interface FacturaService {
      * @param fechaFin Fecha de fin (inclusive)
      * @return Total de descuentos aplicados en el rango de fechas
      */
-    double obtenerTotalDescuentos(LocalDate fechaInicio, LocalDate fechaFin);
+    double obtenerTotalDescuentos(Date fechaInicio, Date fechaFin);
     
     /**
      * Genera un reporte de ventas en formato de texto.
@@ -105,5 +126,5 @@ public interface FacturaService {
      * @param fechaFin Fecha de fin (inclusive)
      * @return Reporte de ventas en formato de texto
      */
-    String generarReporteVentas(LocalDate fechaInicio, LocalDate fechaFin);
+    String generarReporteVentas(Date fechaInicio, Date fechaFin);
 }

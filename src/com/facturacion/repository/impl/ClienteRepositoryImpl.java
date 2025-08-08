@@ -3,9 +3,12 @@ package com.facturacion.repository.impl;
 import com.facturacion.model.Cliente;
 import com.facturacion.model.TipoCliente;
 import com.facturacion.repository.ClienteRepository;
-import com.facturacion.util.JsonUtil;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -32,7 +35,7 @@ public class ClienteRepositoryImpl implements ClienteRepository {
     }
     
     private Path getClientePath(long cedula) {
-        return Paths.get(CLIENTES_DIR, cedula + ".json");
+        return Paths.get(CLIENTES_DIR, "cliente_" + cedula + ".dat");
     }
     
     @Override
@@ -41,10 +44,9 @@ public class ClienteRepositoryImpl implements ClienteRepository {
             return null;
         }
         
-        try {
-            Path filePath = getClientePath(cliente.getCedula());
-            String json = JsonUtil.toJson(cliente);
-            Files.writeString(filePath, json);
+        try (FileOutputStream fileOut = new FileOutputStream(getClientePath(cliente.getCedula()).toFile());
+             ObjectOutputStream out = new ObjectOutputStream(fileOut)) {
+            out.writeObject(cliente);
             return cliente;
         } catch (IOException e) {
             throw new RuntimeException("Error al guardar el cliente", e);
@@ -58,10 +60,11 @@ public class ClienteRepositoryImpl implements ClienteRepository {
             return Optional.empty();
         }
         
-        try {
-            String json = Files.readString(filePath);
-            return Optional.of(JsonUtil.fromJson(json, Cliente.class));
-        } catch (IOException e) {
+        try (FileInputStream fileIn = new FileInputStream(filePath.toFile());
+             ObjectInputStream in = new ObjectInputStream(fileIn)) {
+            Cliente cliente = (Cliente) in.readObject();
+            return Optional.of(cliente);
+        } catch (IOException | ClassNotFoundException e) {
             throw new RuntimeException("Error al leer el cliente con cédula: " + cedula, e);
         }
     }
@@ -71,12 +74,12 @@ public class ClienteRepositoryImpl implements ClienteRepository {
         try {
             return Files.list(Paths.get(CLIENTES_DIR))
                 .filter(Files::isRegularFile)
-                .filter(path -> path.toString().endsWith(".json"))
+                .filter(path -> path.toString().endsWith(".dat"))
                 .map(path -> {
-                    try {
-                        String json = Files.readString(path);
-                        return JsonUtil.fromJson(json, Cliente.class);
-                    } catch (IOException e) {
+                    try (FileInputStream fileIn = new FileInputStream(path.toFile());
+                         ObjectInputStream in = new ObjectInputStream(fileIn)) {
+                        return (Cliente) in.readObject();
+                    } catch (IOException | ClassNotFoundException e) {
                         throw new RuntimeException("Error al leer el archivo: " + path, e);
                     }
                 })
@@ -94,7 +97,8 @@ public class ClienteRepositoryImpl implements ClienteRepository {
         
         String busqueda = nombre.toLowerCase();
         return buscarTodos().stream()
-            .filter(cliente -> cliente.getNombre().toLowerCase().contains(busqueda))
+            .filter(cliente -> cliente != null && cliente.getNombre() != null && 
+                   cliente.getNombre().toLowerCase().contains(busqueda))
             .collect(Collectors.toList());
     }
     
@@ -120,6 +124,24 @@ public class ClienteRepositoryImpl implements ClienteRepository {
             return Files.deleteIfExists(filePath);
         } catch (IOException e) {
             throw new RuntimeException("Error al eliminar el cliente con cédula: " + cedula, e);
+        }
+    }
+    
+    @Override
+    public void eliminarTodos() {
+        try {
+            Files.list(Paths.get(CLIENTES_DIR))
+                .filter(Files::isRegularFile)
+                .filter(path -> path.toString().endsWith(".dat"))
+                .forEach(path -> {
+                    try {
+                        Files.delete(path);
+                    } catch (IOException e) {
+                        throw new RuntimeException("Error al eliminar el archivo: " + path, e);
+                    }
+                });
+        } catch (IOException e) {
+            throw new RuntimeException("Error al limpiar el repositorio de clientes", e);
         }
     }
     

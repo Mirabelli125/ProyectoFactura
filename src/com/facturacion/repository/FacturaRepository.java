@@ -1,7 +1,7 @@
 package com.facturacion.repository;
 
 import com.facturacion.model.Factura;
-import java.time.LocalDate;
+import java.util.Date;
 import java.util.List;
 import java.util.Optional;
 
@@ -49,7 +49,21 @@ public interface FacturaRepository {
      * @param fechaFin Fecha de fin (inclusive)
      * @return Lista de facturas en el rango de fechas
      */
-    List<Factura> buscarPorRangoFechas(LocalDate fechaInicio, LocalDate fechaFin);
+    /**
+     * Busca facturas dentro de un rango de fechas (inclusive).
+     * 
+     * @param fechaInicio Fecha de inicio (se ignorará la hora)
+     * @param fechaFin Fecha de fin (se ignorará la hora)
+     * @return Lista de facturas dentro del rango de fechas
+     */
+    List<Factura> buscarPorRangoFechas(Date fechaInicio, Date fechaFin);
+    
+    /**
+     * Busca las facturas del día actual.
+     * 
+     * @return Lista de facturas del día actual
+     */
+    List<Factura> buscarDelDia();
     
     /**
      * Obtiene la última factura ingresada.

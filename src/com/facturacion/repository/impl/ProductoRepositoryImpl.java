@@ -3,9 +3,12 @@ package com.facturacion.repository.impl;
 import com.facturacion.model.Producto;
 import com.facturacion.model.ProductoPerecedero;
 import com.facturacion.repository.ProductoRepository;
-import com.facturacion.util.JsonUtil;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -32,7 +35,7 @@ public class ProductoRepositoryImpl implements ProductoRepository {
     }
     
     private Path getProductoPath(int codigo) {
-        return Paths.get(PRODUCTOS_DIR, codigo + ".json");
+        return Paths.get(PRODUCTOS_DIR, "PROD_" + codigo + ".dat");
     }
     
     @Override
@@ -41,10 +44,9 @@ public class ProductoRepositoryImpl implements ProductoRepository {
             return null;
         }
         
-        try {
-            Path filePath = getProductoPath(producto.getCodigo());
-            String json = JsonUtil.toJson(producto);
-            Files.writeString(filePath, json);
+        try (FileOutputStream fileOut = new FileOutputStream(getProductoPath(producto.getCodigo()).toFile());
+             ObjectOutputStream out = new ObjectOutputStream(fileOut)) {
+            out.writeObject(producto);
             return producto;
         } catch (IOException e) {
             throw new RuntimeException("Error al guardar el producto", e);
@@ -58,15 +60,10 @@ public class ProductoRepositoryImpl implements ProductoRepository {
             return Optional.empty();
         }
         
-        try {
-            String json = Files.readString(filePath);
-            // Determinar el tipo de producto para la deserialización correcta
-            if (json.contains("fechaVencimiento")) {
-                return Optional.of(JsonUtil.fromJson(json, ProductoPerecedero.class));
-            } else {
-                return Optional.of(JsonUtil.fromJson(json, Producto.class));
-            }
-        } catch (IOException e) {
+        try (FileInputStream fileIn = new FileInputStream(filePath.toFile());
+             ObjectInputStream in = new ObjectInputStream(fileIn)) {
+            return Optional.ofNullable((Producto) in.readObject());
+        } catch (IOException | ClassNotFoundException e) {
             throw new RuntimeException("Error al leer el producto con código: " + codigo, e);
         }
     }
@@ -76,17 +73,12 @@ public class ProductoRepositoryImpl implements ProductoRepository {
         try {
             return Files.list(Paths.get(PRODUCTOS_DIR))
                 .filter(Files::isRegularFile)
-                .filter(path -> path.toString().endsWith(".json"))
+                .filter(path -> path.toString().endsWith(".dat"))
                 .map(path -> {
-                    try {
-                        String json = Files.readString(path);
-                        // Determinar el tipo de producto para la deserialización correcta
-                        if (json.contains("fechaVencimiento")) {
-                            return JsonUtil.fromJson(json, ProductoPerecedero.class);
-                        } else {
-                            return JsonUtil.fromJson(json, Producto.class);
-                        }
-                    } catch (IOException e) {
+                    try (FileInputStream fileIn = new FileInputStream(path.toFile());
+                         ObjectInputStream in = new ObjectInputStream(fileIn)) {
+                        return (Producto) in.readObject();
+                    } catch (IOException | ClassNotFoundException e) {
                         throw new RuntimeException("Error al leer el archivo: " + path, e);
                     }
                 })
@@ -143,6 +135,24 @@ public class ProductoRepositoryImpl implements ProductoRepository {
             return Files.deleteIfExists(filePath);
         } catch (IOException e) {
             throw new RuntimeException("Error al eliminar el producto con código: " + codigo, e);
+        }
+    }
+    
+    @Override
+    public void eliminarTodos() {
+        try {
+            Files.list(Paths.get(PRODUCTOS_DIR))
+                .filter(Files::isRegularFile)
+                .filter(path -> path.toString().endsWith(".dat"))
+                .forEach(path -> {
+                    try {
+                        Files.delete(path);
+                    } catch (IOException e) {
+                        throw new RuntimeException("Error al eliminar el archivo: " + path, e);
+                    }
+                });
+        } catch (IOException e) {
+            throw new RuntimeException("Error al limpiar el repositorio de productos", e);
         }
     }
     

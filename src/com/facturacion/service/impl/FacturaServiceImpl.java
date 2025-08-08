@@ -12,7 +12,9 @@ import com.facturacion.repository.FacturaRepository;
 import com.facturacion.service.ClienteService;
 import com.facturacion.service.FacturaService;
 import com.facturacion.service.ProductoService;
-import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Date;
 import java.util.List;
 import java.util.Optional;
 
@@ -147,16 +149,21 @@ public class FacturaServiceImpl implements FacturaService {
     }
     
     @Override
-    public List<Factura> buscarPorRangoFechas(LocalDate fechaInicio, LocalDate fechaFin) {
+    public List<Factura> buscarPorRangoFechas(Date fechaInicio, Date fechaFin) {
         if (fechaInicio == null || fechaFin == null) {
             throw new IllegalArgumentException("Las fechas no pueden ser nulas");
         }
         
-        if (fechaInicio.isAfter(fechaFin)) {
+        if (fechaInicio.after(fechaFin)) {
             throw new IllegalArgumentException("La fecha de inicio no puede ser posterior a la fecha de fin");
         }
         
         return facturaRepository.buscarPorRangoFechas(fechaInicio, fechaFin);
+    }
+    
+    @Override
+    public List<Factura> buscarDelDia() {
+        return facturaRepository.buscarDelDia();
     }
     
     @Override
@@ -250,7 +257,7 @@ public class FacturaServiceImpl implements FacturaService {
     }
     
     @Override
-    public double obtenerTotalVentas(LocalDate fechaInicio, LocalDate fechaFin) {
+    public double obtenerTotalVentas(Date fechaInicio, Date fechaFin) {
         return buscarPorRangoFechas(fechaInicio, fechaFin).stream()
             .filter(factura -> !factura.isAnulada())
             .mapToDouble(Factura::calcularTotal)
@@ -258,7 +265,7 @@ public class FacturaServiceImpl implements FacturaService {
     }
     
     @Override
-    public double obtenerTotalImpuestos(LocalDate fechaInicio, LocalDate fechaFin) {
+    public double obtenerTotalImpuestos(Date fechaInicio, Date fechaFin) {
         return buscarPorRangoFechas(fechaInicio, fechaFin).stream()
             .filter(factura -> !factura.isAnulada())
             .mapToDouble(Factura::calcularTotalImpuestos)
@@ -266,7 +273,7 @@ public class FacturaServiceImpl implements FacturaService {
     }
     
     @Override
-    public double obtenerTotalDescuentos(LocalDate fechaInicio, LocalDate fechaFin) {
+    public double obtenerTotalDescuentos(Date fechaInicio, Date fechaFin) {
         return buscarPorRangoFechas(fechaInicio, fechaFin).stream()
             .filter(factura -> !factura.isAnulada())
             .mapToDouble(Factura::calcularTotalDescuentos)
@@ -274,7 +281,7 @@ public class FacturaServiceImpl implements FacturaService {
     }
     
     @Override
-    public String generarReporteVentas(LocalDate fechaInicio, LocalDate fechaFin) {
+    public String generarReporteVentas(Date fechaInicio, Date fechaFin) {
         List<Factura> facturas = buscarPorRangoFechas(fechaInicio, fechaFin);
         
         StringBuilder reporte = new StringBuilder();

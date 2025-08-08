@@ -80,4 +80,10 @@ public interface ProductoRepository {
      * @return true si existe un producto con ese código, false en caso contrario
      */
     boolean existePorCodigo(int codigo);
+    
+    /**
+     * Elimina todos los productos del repositorio.
+     * ¡Cuidado! Esta operación no se puede deshacer.
+     */
+    void eliminarTodos();
 }

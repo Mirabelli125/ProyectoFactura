@@ -64,4 +64,10 @@ public interface ClienteRepository {
      * @return true si existe un cliente con esa cédula, false en caso contrario
      */
     boolean existePorCedula(long cedula);
+    
+    /**
+     * Elimina todos los clientes del repositorio.
+     * ¡Cuidado! Esta operación no se puede deshacer.
+     */
+    void eliminarTodos();
 }
